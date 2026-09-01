@@ -58,10 +58,17 @@ export interface LifecycleConfig {
   scriptPath: string;
 }
 
+export interface PendingConfigChange {
+  module: string;
+  moduleName: string;
+  timestamp: string;
+}
+
 export interface RestartStatusResponse {
   scheduledRestart: ScheduledRestartInfo | null;
   dailyRestart: DailyRestartInfo;
   lifecycleConfig: LifecycleConfig;
+  pendingChanges: PendingConfigChange[];
 }
 
 export interface CharacterBinding {
@@ -73,45 +80,41 @@ export interface CharacterBinding {
 }
 
 export interface ValgrindConfig {
-  xpLoss: number;
-  calcMode: string;
+  calculationMode: 'TieredBrackets' | 'ContinuousCurve' | 'PerSkill' | string;
+  useTopNSkillsOnly: boolean;
+  topNSkillsCount: number;
+  resetAccumulatorOnDeath: boolean;
+  enableDebugLogging: boolean;
+  earlyGameLossPercent: number;
+  midGameLossPercent: number;
+  lateGameLossPercent: number;
+  endgameLossPercent: number;
+  curveMaxLossPercent: number;
+  curveMinLossPercent: number;
 }
 
 export interface DagrNottConfig {
-  totalLength: number;
-  dayLength: number;
-  nightLength: number;
+  dawnMultiplier: number;
+  dayMultiplier: number;
+  duskMultiplier: number;
+  nightMultiplier: number;
+  logPhaseTransitions: boolean;
+  dawnMinutes?: number;
+  dayMinutes?: number;
+  duskMinutes?: number;
+  nightMinutes?: number;
+  totalMinutes?: number;
 }
 
 export interface SkaldConfig {
   enabled: boolean;
-  enablePvp: boolean;
   enableBosses: boolean;
   includeBiome: boolean;
   logToConsole: boolean;
   monsterTemplates: string;
   bossTemplates: string;
-  treeTemplates: string;
-  drowningTemplates: string;
-  freezingTemplates: string;
-  burningTemplates: string;
-  poisonTemplates: string;
-  fallDamageTemplates: string;
-  pvpTemplates: string;
-}
-
-export interface HeimdallrConfig {
-  enableCustomScaling: boolean;
-  playerHealthScalePercent: number;
-  playerDamageScalePercent: number;
-  playerRangeRadius: number;
-  bossHealthMultiplier: number;
-  bossDamageMultiplier: number;
-  enableStarTweaks: boolean;
-  nightStarBonusChance: number;
-  distanceCenterMultiplier: number;
-  globalOneStarChance: number;
-  globalTwoStarChance: number;
+  overwhelmedMessages: string;
+  genericDeathMessages: string;
 }
 
 export interface NjororConfig {
@@ -119,6 +122,8 @@ export interface NjororConfig {
   headwindMitigationPercent: number;
   minWindSpeedMultiplier: number;
   alwaysTailwindInOcean: boolean;
+  checkDeflectOnWindChange: boolean;
+  checkDeflectTimeSeconds: number;
   enableWeatherTuning: boolean;
   stormFrequencyMultiplier: number;
   rainFrequencyMultiplier: number;
@@ -128,6 +133,7 @@ export interface NjororConfig {
   nighttimeSerpentSpawnChance: number;
   serpentSpawnIntervalSeconds: number;
   allowCalmWeatherDaySerpents: boolean;
+  enableDebugLogging: boolean;
 }
 
 export interface SkaldDeathRecord {
@@ -141,23 +147,96 @@ export interface SkaldDeathRecord {
   timestamp: string;
 }
 
+export interface OtherModSummary {
+  fileName: string;
+  filePath: string;
+  displayName: string;
+  pluginGuid: string;
+  pluginName: string;
+  pluginVersion: string;
+  sectionCount: number;
+  settingCount: number;
+  fileSizeBytes: number;
+  lastModified: string;
+  isLoadedInGame: boolean;
+  isFirstParty: boolean;
+}
+
+export interface OtherModConfigEntry {
+  key: string;
+  value: string;
+  defaultValue?: string | null;
+  valueType: string;
+  description: string;
+  acceptableValues?: string[] | null;
+  minRange?: number | null;
+  maxRange?: number | null;
+}
+
+export interface OtherModSection {
+  name: string;
+  entries: OtherModConfigEntry[];
+}
+
+export interface OtherModConfigDetail {
+  fileName: string;
+  displayName: string;
+  pluginGuid: string;
+  pluginName: string;
+  pluginVersion: string;
+  isLoadedInGame: boolean;
+  sections: OtherModSection[];
+  rawContent: string;
+  lastModified: string;
+}
+
+export interface SaveOtherModConfigRequest {
+  fileName: string;
+  updates?: Record<string, Record<string, string>>;
+  rawContent?: string;
+  saveRaw?: boolean;
+}
+
+export const AUTH_STORAGE_KEY = 'bigfrost_auth';
+
+function getAuthHeaders(): Record<string, string> {
+  const token = sessionStorage.getItem(AUTH_STORAGE_KEY) || sessionStorage.getItem('bifrostheim_auth');
+  return token ? { 'X-Admin-Password': token } : {};
+}
+
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const res = await fetch(endpoint, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...getAuthHeaders(),
       ...(options?.headers || {}),
     },
   });
 
   if (!res.ok) {
-    throw new Error(`API Error [${res.status}]: ${res.statusText}`);
+    if (res.status === 401 && !endpoint.startsWith('/api/auth/')) {
+      sessionStorage.removeItem(AUTH_STORAGE_KEY);
+      sessionStorage.removeItem('bifrostheim_auth');
+      window.dispatchEvent(new Event('bigfrost_unauthorized'));
+    }
+    const errBody = await res.json().catch(() => ({}));
+    const message = errBody.message || errBody.error || `API Error [${res.status}]: ${res.statusText}`;
+    throw new Error(message);
   }
 
   return res.json() as Promise<T>;
 }
 
 export const api = {
+  // Authentication
+  verifyAuth: () => request<{ authenticated: boolean; message: string }>('/api/auth/verify'),
+  getAuthStatus: () => request<{ required: boolean; authenticated: boolean }>('/api/auth/status'),
+  login: (password: string) => request<{ success: boolean; token?: string; message: string }>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  }),
+
   // Module installation status
   getInstalledModules: () => request<{ installed: string[] }>('/api/modules/installed'),
 
@@ -210,6 +289,10 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(config),
   }),
+  getPendingChanges: () => request<{ success: boolean; pendingChanges: PendingConfigChange[] }>('/api/server/pending-changes'),
+  clearPendingChanges: () => request<{ success: boolean; message: string }>('/api/server/clear-pending-changes', {
+    method: 'POST',
+  }),
 
   // CharactersVault
   getCharacterBindings: () => request<CharacterBinding[]>('/api/modules/charactervault/bindings'),
@@ -247,17 +330,22 @@ export const api = {
     body: JSON.stringify({ victimName, killerName, category, biome }),
   }),
 
-  // Heimdallr
-  getHeimdallrConfig: () => request<HeimdallrConfig>('/api/modules/heimdallr/config'),
-  saveHeimdallrConfig: (config: Partial<HeimdallrConfig>) => request<{ success: boolean; config: HeimdallrConfig }>('/api/modules/heimdallr/config', {
-    method: 'POST',
-    body: JSON.stringify(config),
-  }),
-
   // Njoror
   getNjororConfig: () => request<NjororConfig>('/api/modules/njoror/config'),
   saveNjororConfig: (config: Partial<NjororConfig>) => request<{ success: boolean; config: NjororConfig }>('/api/modules/njoror/config', {
     method: 'POST',
     body: JSON.stringify(config),
+  }),
+
+  // Other Mods (3rd Party Configs)
+  getOtherModsList: () => request<{ mods: OtherModSummary[] }>('/api/other-mods/list'),
+  getOtherModConfig: (fileName: string) => request<OtherModConfigDetail>(`/api/other-mods/config?file=${encodeURIComponent(fileName)}`),
+  saveOtherModConfig: (req: SaveOtherModConfigRequest) => request<{ success: boolean; config: OtherModConfigDetail }>('/api/other-mods/config/save', {
+    method: 'POST',
+    body: JSON.stringify(req),
+  }),
+  resetOtherModConfigDefaults: (fileName: string) => request<{ success: boolean; config: OtherModConfigDetail }>('/api/other-mods/config/reset-defaults', {
+    method: 'POST',
+    body: JSON.stringify({ fileName }),
   }),
 };

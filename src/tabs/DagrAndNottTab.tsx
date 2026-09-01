@@ -1,23 +1,51 @@
 import { useState, useEffect } from 'react';
-import { FiSun, FiMoon, FiClock, FiZap, FiCheck, FiRefreshCw } from 'react-icons/fi';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  FiClock,
+  FiSun,
+  FiMoon,
+  FiSunset,
+  FiSunrise,
+  FiActivity,
+  FiSliders,
+} from 'react-icons/fi';
 import { useToast } from '../context/ToastContext';
 import { api } from '../api/client';
+import { useTabMode } from '../hooks/useTabMode';
+import ModHeader from '../components/ui/ModHeader';
+import SettingsCard from '../components/ui/SettingsCard';
+import SettingRow from '../components/ui/SettingRow';
+import SliderField from '../components/ui/SliderField';
+import PresetGrid from '../components/ui/PresetGrid';
 
-export default function DagrAndNottTab() {
+interface DagrAndNottTabProps {
+  onSaved?: () => void;
+}
+
+export default function DagrAndNottTab({ onSaved }: DagrAndNottTabProps = {}) {
   const { showToast } = useToast();
-  const [totalLength, setTotalLength] = useState(30); // in minutes
-  const [dayLength, setDayLength] = useState(21);
-  const [nightLength, setNightLength] = useState(9);
+  const [mode, setMode] = useTabMode('dagrnott');
+
+  // Phase multipliers (defaults match DagrAndNott v1.0.0)
+  const [dawnMultiplier, setDawnMultiplier] = useState(0.9);
+  const [dayMultiplier, setDayMultiplier] = useState(0.5);
+  const [duskMultiplier, setDuskMultiplier] = useState(0.9);
+  const [nightMultiplier, setNightMultiplier] = useState(0.3);
+  const [logPhaseTransitions, setLogPhaseTransitions] = useState(true);
+
   const [isApplying, setIsApplying] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchConfig = async () => {
     try {
+      setIsLoading(true);
       const cfg = await api.getDagrNottConfig();
-      setTotalLength(cfg.totalLength);
-      setDayLength(cfg.dayLength);
-      setNightLength(cfg.nightLength);
-    } catch (err) {
+      setDawnMultiplier(cfg.dawnMultiplier ?? 0.9);
+      setDayMultiplier(cfg.dayMultiplier ?? 0.5);
+      setDuskMultiplier(cfg.duskMultiplier ?? 0.9);
+      setNightMultiplier(cfg.nightMultiplier ?? 0.3);
+      setLogPhaseTransitions(cfg.logPhaseTransitions ?? true);
+    } catch {
       showToast('Failed to fetch Dagr & Nott cycle from server', 'error');
     } finally {
       setIsLoading(false);
@@ -28,236 +56,353 @@ export default function DagrAndNottTab() {
     fetchConfig();
   }, []);
 
-  // Synchronize sub-sliders when total changes, preserving proportions
-  const handleTotalChange = (newTotal: number) => {
-    setTotalLength(newTotal);
-    const dayRatio = dayLength / (dayLength + nightLength || 1);
-    const newDay = Math.max(1, Math.round(newTotal * dayRatio));
-    const newNight = Math.max(1, newTotal - newDay);
-    setDayLength(newDay);
-    setNightLength(newNight);
-  };
+  // Calculated minute estimates based on Valheim base seconds:
+  // Vanilla: Dawn = 4.5m (270s), Day = 15.0m (900s), Dusk = 4.5m (270s), Night = 6.0m (360s) -> 30m total
+  const dawnMinutes = +(4.5 / Math.max(0.01, dawnMultiplier)).toFixed(1);
+  const dayMinutes = +(15.0 / Math.max(0.01, dayMultiplier)).toFixed(1);
+  const duskMinutes = +(4.5 / Math.max(0.01, duskMultiplier)).toFixed(1);
+  const nightMinutes = +(6.0 / Math.max(0.01, nightMultiplier)).toFixed(1);
+  const totalMinutes = +(
+    dawnMinutes +
+    dayMinutes +
+    duskMinutes +
+    nightMinutes
+  ).toFixed(1);
 
-  // Adjust night strictly when day changes
-  const handleDayChange = (newDay: number) => {
-    const clampedDay = Math.min(Math.max(1, newDay), totalLength - 1);
-    setDayLength(clampedDay);
-    setNightLength(totalLength - clampedDay);
-  };
+  // Proportional percentages
+  const dawnPercent = ((dawnMinutes / (totalMinutes || 1)) * 100).toFixed(1);
+  const dayPercent = ((dayMinutes / (totalMinutes || 1)) * 100).toFixed(1);
+  const duskPercent = ((duskMinutes / (totalMinutes || 1)) * 100).toFixed(1);
+  const nightPercent = ((nightMinutes / (totalMinutes || 1)) * 100).toFixed(1);
 
-  // Adjust day strictly when night changes
-  const handleNightChange = (newNight: number) => {
-    const clampedNight = Math.min(Math.max(1, newNight), totalLength - 1);
-    setNightLength(clampedNight);
-    setDayLength(totalLength - clampedNight);
-  };
+  const inGameHourMinutes = ((totalMinutes || 30) / 24).toFixed(2);
 
-  const applyPreset = (total: number, day: number, night: number, name: string) => {
-    setTotalLength(total);
-    setDayLength(day);
-    setNightLength(night);
+  const applyPreset = (
+    dawn: number,
+    day: number,
+    dusk: number,
+    night: number,
+    name: string
+  ) => {
+    setDawnMultiplier(dawn);
+    setDayMultiplier(day);
+    setDuskMultiplier(dusk);
+    setNightMultiplier(night);
     showToast(`Loaded preset: ${name}`, 'info');
   };
 
   const handleApplyConfig = async () => {
     setIsApplying(true);
     try {
-      await api.saveDagrNottConfig({ totalLength, dayLength, nightLength });
-      showToast(`Dagr & Nott cycle applied: ${totalLength}m total (${dayLength}m Day / ${nightLength}m Night)`, 'success');
-    } catch (err) {
+      await api.saveDagrNottConfig({
+        dawnMultiplier,
+        dayMultiplier,
+        duskMultiplier,
+        nightMultiplier,
+        logPhaseTransitions,
+      });
+      showToast(
+        `Dagr & Nott cycle saved: ~${totalMinutes}m total (Dawn: ${dawnMultiplier}x, Day: ${dayMultiplier}x, Dusk: ${duskMultiplier}x, Night: ${nightMultiplier}x) (Restart pending).`,
+        'success'
+      );
+      onSaved?.();
+    } catch {
       showToast('Failed to sync Dagr & Nott cycle', 'error');
     } finally {
       setIsApplying(false);
     }
   };
 
-  const inGameHourMinutes = (totalLength / 24).toFixed(2);
+  const presets = [
+    {
+      name: 'Dagr & Nott (1h)',
+      desc: '~60m total (Balanced)',
+      dawn: 0.9,
+      day: 0.5,
+      dusk: 0.9,
+      night: 0.3,
+    },
+    {
+      name: 'Vanilla Valheim',
+      desc: '30m total (Default)',
+      dawn: 1.0,
+      day: 1.0,
+      dusk: 1.0,
+      night: 1.0,
+    },
+    {
+      name: 'Epic Journey (2h)',
+      desc: '~120m total (Immersion)',
+      dawn: 0.45,
+      day: 0.25,
+      dusk: 0.45,
+      night: 0.15,
+    },
+    {
+      name: 'Fast Rotation',
+      desc: '~15m total (Rapid)',
+      dawn: 2.0,
+      day: 2.0,
+      dusk: 2.0,
+      night: 2.0,
+    },
+    {
+      name: 'Long Day / Short Night',
+      desc: '~59m total (Builders)',
+      dawn: 1.0,
+      day: 0.33,
+      dusk: 1.0,
+      night: 1.2,
+    },
+    {
+      name: 'Endless Dark Night',
+      desc: '~61m total (Survival)',
+      dawn: 1.5,
+      day: 1.5,
+      dusk: 1.5,
+      night: 0.13,
+    },
+  ];
 
   return (
-    <div className="space-y-8 w-full">
-      {/* Header */}
-      <div className="bg-gray-900/60 backdrop-blur-md border border-gray-800/80 p-6 rounded-2xl shadow-xl flex items-center justify-between">
-        <div className="flex items-center space-x-3.5">
-          <div className="p-3 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-xl">
-            <FiClock size={22} />
-          </div>
+    <div className="space-y-6 w-full">
+      {/* Mod Header */}
+      <ModHeader
+        icon={FiClock}
+        title="Dagr & Nott Diurnal Engine"
+        description="Real-time reactive 4-phase day/night cycle scaling and 24h Valheim time dilation."
+        mode={mode}
+        onModeChange={setMode}
+        tabId="dagrnott"
+        accentColor="amber"
+        onRefresh={fetchConfig}
+        isRefreshing={isLoading}
+        onSave={handleApplyConfig}
+        isSaving={isApplying}
+      />
+
+      {/* Cycle Presets */}
+      <SettingsCard
+        title="Cycle Presets"
+        subtitle="Quickly adjust overall day and night cycle length"
+        icon={FiClock}
+        accentColor="amber"
+      >
+        <PresetGrid
+          presets={presets.map((p) => {
+            const isMatch =
+              Math.abs(dawnMultiplier - p.dawn) < 0.02 &&
+              Math.abs(dayMultiplier - p.day) < 0.02 &&
+              Math.abs(duskMultiplier - p.dusk) < 0.02 &&
+              Math.abs(nightMultiplier - p.night) < 0.02;
+            return {
+              name: p.name,
+              desc: p.desc,
+              isActive: isMatch,
+              onClick: () =>
+                applyPreset(p.dawn, p.day, p.dusk, p.night, p.name),
+            };
+          })}
+          accentColor="amber"
+        />
+      </SettingsCard>
+
+      {/* Cycle Summary & Visual Ratio Bar */}
+      <SettingsCard
+        title="Cycle Duration & Phase Proportions"
+        subtitle="Real-time breakdown of phase duration and in-game time dilation"
+        icon={FiSun}
+        accentColor="amber"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-800/80 pb-5">
           <div>
-            <h2 className="text-xl font-bold text-gray-100">Dagr & Nott Diurnal Engine</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Real-time reactive day/night cycle scaling and 24h Valheim time dilation.</p>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider font-mono">
+              Estimated Total Cycle Duration
+            </div>
+            <div className="flex items-baseline space-x-3 mt-1">
+              <span className="text-3xl sm:text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-amber-300 via-orange-300 to-indigo-300 font-mono">
+                ~{totalMinutes}m
+              </span>
+              <span className="text-xs text-gray-400 font-mono">
+                ({inGameHourMinutes}m per in-game hour &bull; Vanilla: 30.0m)
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-mono bg-amber-500/10 text-amber-300 border border-amber-500/20">
+              <FiSunrise className="mr-1.5" /> Dawn ~{dawnMinutes}m ({dawnPercent}
+              %)
+            </span>
+            <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-mono bg-yellow-500/10 text-yellow-300 border border-yellow-500/20">
+              <FiSun className="mr-1.5" /> Day ~{dayMinutes}m ({dayPercent}%)
+            </span>
+            <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-mono bg-rose-500/10 text-rose-300 border border-rose-500/20">
+              <FiSunset className="mr-1.5" /> Dusk ~{duskMinutes}m ({duskPercent}
+              %)
+            </span>
+            <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-mono bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+              <FiMoon className="mr-1.5" /> Night ~{nightMinutes}m ({nightPercent}
+              %)
+            </span>
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={fetchConfig}
-            className="p-2.5 bg-gray-800/80 hover:bg-gray-800 text-gray-400 hover:text-gray-200 border border-gray-700/80 rounded-xl transition-all"
-            title="Reload config from server"
-          >
-            <FiRefreshCw size={16} />
-          </button>
-          <button
-            onClick={handleApplyConfig}
-            disabled={isApplying || isLoading}
-            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-6 py-2.5 rounded-xl font-medium text-xs transition-all shadow-lg shadow-blue-500/25 flex items-center space-x-2"
-          >
-            <FiCheck />
-            <span>{isApplying ? 'Saving...' : 'Save & Apply Config'}</span>
-          </button>
+        {/* 4-Phase Progress Bar */}
+        <div className="space-y-2 pt-1">
+          <div className="flex justify-between items-center text-xs font-mono text-gray-400">
+            <span className="text-amber-400">0.00 Dawn</span>
+            <span className="text-yellow-400">0.15 Day</span>
+            <span className="text-rose-400">0.65 Dusk</span>
+            <span className="text-indigo-400">0.80 Night</span>
+            <span className="text-indigo-300">1.00</span>
+          </div>
+          <div className="h-4 w-full rounded-full flex overflow-hidden shadow-inner bg-gray-950 border border-gray-800">
+            <div
+              className="bg-gradient-to-r from-amber-500 to-orange-400 transition-all duration-200"
+              style={{ width: `${dawnPercent}%` }}
+              title={`Dawn: ~${dawnMinutes}m (${dawnPercent}%)`}
+            />
+            <div
+              className="bg-gradient-to-r from-yellow-400 to-amber-300 transition-all duration-200"
+              style={{ width: `${dayPercent}%` }}
+              title={`Day: ~${dayMinutes}m (${dayPercent}%)`}
+            />
+            <div
+              className="bg-gradient-to-r from-orange-400 to-rose-400 transition-all duration-200"
+              style={{ width: `${duskPercent}%` }}
+              title={`Dusk: ~${duskMinutes}m (${duskPercent}%)`}
+            />
+            <div
+              className="bg-gradient-to-r from-indigo-600 to-purple-700 transition-all duration-200"
+              style={{ width: `${nightPercent}%` }}
+              title={`Night: ~${nightMinutes}m (${nightPercent}%)`}
+            />
+          </div>
         </div>
-      </div>
+      </SettingsCard>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        
-        {/* Left Column: Master Duration & Presets */}
-        <div className="bg-gray-900/60 backdrop-blur-md border border-gray-800/80 rounded-2xl p-8 space-y-6 shadow-xl flex flex-col justify-between">
-          <div className="space-y-6">
-            {/* Quick Presets */}
-            <div>
-              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-3 font-mono">
-                Cycle Presets
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                {[
-                  { label: 'Vanilla Valheim', total: 30, day: 21, night: 9 },
-                  { label: 'Fast Cycles', total: 15, day: 10, night: 5 },
-                  { label: 'Long Journey', total: 60, day: 45, night: 15 },
-                  { label: 'Midnight Sun', total: 45, day: 38, night: 7 },
-                ].map((p) => (
-                  <button
-                    key={p.label}
-                    type="button"
-                    onClick={() => applyPreset(p.total, p.day, p.night, p.label)}
-                    className={`px-3 py-2.5 rounded-xl border text-xs font-medium transition-all text-center ${
-                      totalLength === p.total && dayLength === p.day
-                        ? 'bg-blue-500/15 border-blue-500/40 text-blue-300 shadow-[0_0_10px_rgba(59,130,246,0.15)]'
-                        : 'bg-gray-950/60 border-gray-800 text-gray-400 hover:text-gray-200 hover:border-gray-700'
-                    }`}
-                  >
-                    <div>{p.label}</div>
-                    <div className="text-[10px] font-mono text-gray-500 mt-0.5">{p.total}m total</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Master Slider */}
-            <div className="space-y-4 pt-2">
-              <div className="flex justify-between items-end">
-                <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-200 mb-1">
-                    <FiZap className="text-blue-400" />
-                    <span>Total IRL Cycle Length</span>
-                  </label>
-                  <p className="text-xs text-gray-400">
-                    Real-world minutes for a full 24-hour in-game rotation.
-                  </p>
-                </div>
-                <div className="text-right font-mono">
-                  <span className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-indigo-300 to-amber-200">
-                    {totalLength}m
-                  </span>
-                  <span className="text-xs text-gray-500 block">({inGameHourMinutes}m / in-game hour)</span>
-                </div>
-              </div>
-              
-              <div className="relative pt-2">
-                <input 
-                  type="range" 
-                  min="10" max="120" step="1" 
-                  value={totalLength}
+      {/* Advanced Granular Phase Tuning */}
+      <AnimatePresence>
+        {mode === 'advanced' && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25 }}
+            className="space-y-6 overflow-hidden"
+          >
+            <SettingsCard
+              title="Granular Phase Speed Multipliers"
+              subtitle="Fine-tune time progression velocity (<1.0x extends time, >1.0x accelerates time)"
+              icon={FiSliders}
+              accentColor="amber"
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <SliderField
+                  label="Dawn Phase Speed"
+                  sublabel={`0.00 – 0.15 (15% of cycle) • ~${dawnMinutes} mins`}
+                  icon={FiSunrise}
+                  value={dawnMultiplier}
+                  min={0.05}
+                  max={3.0}
+                  step={0.05}
                   disabled={isLoading}
-                  onChange={(e) => handleTotalChange(parseInt(e.target.value))}
-                  className="w-full h-3 bg-gray-950 border border-gray-800 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400 transition-all shadow-inner"
+                  onChange={setDawnMultiplier}
+                  formatValue={(v) => `${v.toFixed(2)}x`}
+                  accentColor="amber"
+                  ticks={[
+                    { label: '0.10x (~45m)' },
+                    { label: '0.50x (~9m)' },
+                    { label: '0.90x (Default)' },
+                    { label: '1.00x (Vanilla)' },
+                    { label: '3.00x (~1.5m)' },
+                  ]}
                 />
-                <div className="flex justify-between text-xs text-gray-500 mt-2 font-mono">
-                  <span>10m (Turbo)</span>
-                  <span>30m (Default)</span>
-                  <span>60m (Double)</span>
-                  <span>120m (Epic)</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        {/* Right Column: Reactive Balance Allocation & Visualization */}
-        <div className="bg-gray-900/60 backdrop-blur-md border border-gray-800/80 rounded-2xl p-8 space-y-6 shadow-xl flex flex-col justify-between">
-          <div className="space-y-6">
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider font-mono flex items-center justify-between border-b border-gray-800 pb-3">
-              <span>Reactive Balance Allocation</span>
-              <span className="text-blue-400 font-bold">Day + Night = {totalLength}m</span>
-            </div>
+                <SliderField
+                  label="Daytime Phase Speed"
+                  sublabel={`0.15 – 0.65 (50% of cycle) • ~${dayMinutes} mins`}
+                  icon={FiSun}
+                  value={dayMultiplier}
+                  min={0.05}
+                  max={3.0}
+                  step={0.05}
+                  disabled={isLoading}
+                  onChange={setDayMultiplier}
+                  formatValue={(v) => `${v.toFixed(2)}x`}
+                  accentColor="amber"
+                  ticks={[
+                    { label: '0.10x (~150m)' },
+                    { label: '0.25x (~60m)' },
+                    { label: '0.50x (Default)' },
+                    { label: '1.00x (Vanilla)' },
+                    { label: '3.00x (~5m)' },
+                  ]}
+                />
 
-            {/* Day Sub-slider */}
-            <div className="space-y-3 p-4 bg-gray-950/70 rounded-xl border border-gray-800">
-              <div className="flex justify-between items-center">
-                <label className="flex items-center space-x-2 text-sm font-medium text-amber-300">
-                  <FiSun className="text-amber-400 text-base" />
-                  <span>Daytime Duration</span>
-                </label>
-                <span className="text-base font-bold font-mono text-amber-400">{dayLength} min</span>
+                <SliderField
+                  label="Dusk Phase Speed"
+                  sublabel={`0.65 – 0.80 (15% of cycle) • ~${duskMinutes} mins`}
+                  icon={FiSunset}
+                  value={duskMultiplier}
+                  min={0.05}
+                  max={3.0}
+                  step={0.05}
+                  disabled={isLoading}
+                  onChange={setDuskMultiplier}
+                  formatValue={(v) => `${v.toFixed(2)}x`}
+                  accentColor="amber"
+                  ticks={[
+                    { label: '0.10x (~45m)' },
+                    { label: '0.50x (~9m)' },
+                    { label: '0.90x (Default)' },
+                    { label: '1.00x (Vanilla)' },
+                    { label: '3.00x (~1.5m)' },
+                  ]}
+                />
+
+                <SliderField
+                  label="Nighttime Phase Speed"
+                  sublabel={`0.80 – 1.00 (20% of cycle) • ~${nightMinutes} mins`}
+                  icon={FiMoon}
+                  value={nightMultiplier}
+                  min={0.05}
+                  max={3.0}
+                  step={0.05}
+                  disabled={isLoading}
+                  onChange={setNightMultiplier}
+                  formatValue={(v) => `${v.toFixed(2)}x`}
+                  accentColor="indigo"
+                  ticks={[
+                    { label: '0.10x (~60m)' },
+                    { label: '0.20x (~30m)' },
+                    { label: '0.30x (Default)' },
+                    { label: '1.00x (Vanilla)' },
+                    { label: '3.00x (~2m)' },
+                  ]}
+                />
               </div>
-              <input 
-                type="range" 
-                min="1" max={totalLength - 1} step="1" 
-                value={dayLength}
+            </SettingsCard>
+
+            <SettingsCard
+              title="Server Logging"
+              subtitle="Configure console logging for day and night phase shifts"
+              icon={FiActivity}
+              accentColor="amber"
+            >
+              <SettingRow
+                label="Log Phase Transitions"
+                description="Print server console notifications whenever day/night transitions occur (e.g. [Phase Transition] Day -> Dusk (0.90x speed))."
+                checked={logPhaseTransitions}
                 disabled={isLoading}
-                onChange={(e) => handleDayChange(parseInt(e.target.value))}
-                className="w-full h-2 bg-gray-900 rounded-lg appearance-none cursor-pointer accent-amber-500 hover:accent-amber-400 transition-all"
+                onChange={setLogPhaseTransitions}
+                accentColor="amber"
               />
-              <div className="text-[11px] text-gray-500 font-mono">
-                Represents {((dayLength / totalLength) * 100).toFixed(1)}% of the total day cycle
-              </div>
-            </div>
-
-            {/* Night Sub-slider */}
-            <div className="space-y-3 p-4 bg-gray-950/70 rounded-xl border border-gray-800">
-              <div className="flex justify-between items-center">
-                <label className="flex items-center space-x-2 text-sm font-medium text-indigo-300">
-                  <FiMoon className="text-indigo-400 text-base" />
-                  <span>Nighttime Duration</span>
-                </label>
-                <span className="text-base font-bold font-mono text-indigo-400">{nightLength} min</span>
-              </div>
-              <input 
-                type="range" 
-                min="1" max={totalLength - 1} step="1" 
-                value={nightLength}
-                disabled={isLoading}
-                onChange={(e) => handleNightChange(parseInt(e.target.value))}
-                className="w-full h-2 bg-gray-900 rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:accent-indigo-400 transition-all"
-              />
-              <div className="text-[11px] text-gray-500 font-mono">
-                Represents {((nightLength / totalLength) * 100).toFixed(1)}% of the total day cycle
-              </div>
-            </div>
-
-            {/* Visual Ratio Bar */}
-            <div className="pt-2">
-              <div className="flex justify-between items-center text-xs font-mono text-gray-400 mb-2">
-                <span className="flex items-center space-x-1 text-amber-400">
-                  <FiSun />
-                  <span>Day {((dayLength / totalLength) * 100).toFixed(0)}%</span>
-                </span>
-                <span className="flex items-center space-x-1 text-indigo-400">
-                  <FiMoon />
-                  <span>Night {((nightLength / totalLength) * 100).toFixed(0)}%</span>
-                </span>
-              </div>
-              <div className="h-3 w-full rounded-full flex overflow-hidden shadow-inner bg-gray-900 border border-gray-800">
-                <div 
-                  className="bg-gradient-to-r from-amber-500 to-yellow-400 transition-all duration-200" 
-                  style={{ width: `${(dayLength / totalLength) * 100}%` }}
-                ></div>
-                <div 
-                  className="bg-gradient-to-r from-indigo-600 to-purple-700 transition-all duration-200" 
-                  style={{ width: `${(nightLength / totalLength) * 100}%` }}
-                ></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+            </SettingsCard>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

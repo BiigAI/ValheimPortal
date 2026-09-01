@@ -40,48 +40,47 @@ export interface ValheimServerState {
     status: string;
   }>;
   valgrindConfig: {
-    xpLoss: number;
-    calcMode: string;
+    calculationMode: string;
+    useTopNSkillsOnly: boolean;
+    topNSkillsCount: number;
+    resetAccumulatorOnDeath: boolean;
+    enableDebugLogging: boolean;
+    earlyGameLossPercent: number;
+    midGameLossPercent: number;
+    lateGameLossPercent: number;
+    endgameLossPercent: number;
+    curveMaxLossPercent: number;
+    curveMinLossPercent: number;
   };
   dagrNottConfig: {
-    totalLength: number;
-    dayLength: number;
-    nightLength: number;
+    dawnMultiplier: number;
+    dayMultiplier: number;
+    duskMultiplier: number;
+    nightMultiplier: number;
+    logPhaseTransitions: boolean;
+    dawnMinutes?: number;
+    dayMinutes?: number;
+    duskMinutes?: number;
+    nightMinutes?: number;
+    totalMinutes?: number;
   };
   skaldConfig: {
     enabled: boolean;
-    enablePvp: boolean;
     enableBosses: boolean;
     includeBiome: boolean;
     logToConsole: boolean;
     monsterTemplates: string;
     bossTemplates: string;
-    treeTemplates: string;
-    drowningTemplates: string;
-    freezingTemplates: string;
-    burningTemplates: string;
-    poisonTemplates: string;
-    fallDamageTemplates: string;
-    pvpTemplates: string;
-  };
-  heimdallrConfig: {
-    enableCustomScaling: boolean;
-    playerHealthScalePercent: number;
-    playerDamageScalePercent: number;
-    playerRangeRadius: number;
-    bossHealthMultiplier: number;
-    bossDamageMultiplier: number;
-    enableStarTweaks: boolean;
-    nightStarBonusChance: number;
-    distanceCenterMultiplier: number;
-    globalOneStarChance: number;
-    globalTwoStarChance: number;
+    overwhelmedMessages: string;
+    genericDeathMessages: string;
   };
   njororConfig: {
     enableFairWinds: boolean;
     headwindMitigationPercent: number;
     minWindSpeedMultiplier: number;
     alwaysTailwindInOcean: boolean;
+    checkDeflectOnWindChange: boolean;
+    checkDeflectTimeSeconds: number;
     enableWeatherTuning: boolean;
     stormFrequencyMultiplier: number;
     rainFrequencyMultiplier: number;
@@ -91,6 +90,7 @@ export interface ValheimServerState {
     nighttimeSerpentSpawnChance: number;
     serpentSpawnIntervalSeconds: number;
     allowCalmWeatherDaySerpents: boolean;
+    enableDebugLogging: boolean;
   };
   skaldChronicle: Array<{
     id: string;
@@ -117,6 +117,11 @@ export interface ValheimServerState {
     mode: 'ExitOnly' | 'SpawnProcess';
     scriptPath: string;
   };
+  pendingChanges: Array<{
+    module: string;
+    moduleName: string;
+    timestamp: string;
+  }>;
   installedModules: string[];
 }
 
@@ -150,48 +155,47 @@ export const serverState: ValheimServerState = {
     { steamId: '76561198055667788', characterName: 'Torstein', created: '2026-08-19', lastLogin: '1 week ago', status: 'Bound' },
   ],
   valgrindConfig: {
-    xpLoss: 5.0,
-    calcMode: 'Standard',
+    calculationMode: 'TieredBrackets',
+    useTopNSkillsOnly: false,
+    topNSkillsCount: 5,
+    resetAccumulatorOnDeath: true,
+    enableDebugLogging: false,
+    earlyGameLossPercent: 8.0,
+    midGameLossPercent: 5.0,
+    lateGameLossPercent: 2.5,
+    endgameLossPercent: 1.0,
+    curveMaxLossPercent: 8.0,
+    curveMinLossPercent: 1.0,
   },
   dagrNottConfig: {
-    totalLength: 30,
-    dayLength: 21,
-    nightLength: 9,
+    dawnMultiplier: 0.90,
+    dayMultiplier: 0.50,
+    duskMultiplier: 0.90,
+    nightMultiplier: 0.30,
+    logPhaseTransitions: true,
+    dawnMinutes: 5.0,
+    dayMinutes: 30.0,
+    duskMinutes: 5.0,
+    nightMinutes: 20.0,
+    totalMinutes: 60.0,
   },
   skaldConfig: {
     enabled: true,
-    enablePvp: true,
     enableBosses: true,
     includeBiome: true,
     logToConsole: true,
     monsterTemplates: '{victim} was slain by a {killer} in the {biome};{victim} was torn apart by a {killer};A {killer} claimed the soul of {victim}',
     bossTemplates: '{victim} was annihilated by the mythical {killer}!;The legendary {killer} crushed {victim} into dust',
-    treeTemplates: '{victim} was crushed by a falling log!;{victim} learned that lumberjacking is deadly in Valheim',
-    drowningTemplates: '{victim} ran out of stamina and drowned in cold waters;The sea claimed {victim} to the deep',
-    freezingTemplates: '{victim} froze to death in the blizzard of the {biome};The bitter cold claimed {victim}',
-    burningTemplates: '{victim} burned to ashes in the {biome};The flames consumed {victim}',
-    poisonTemplates: '{victim} succumbed to deadly poison in the {biome};Venom ended {victim}\'s journey',
-    fallDamageTemplates: '{victim} plummeted to their death from high cliffs;Gravity showed no mercy to {victim}',
-    pvpTemplates: '{victim} was vanquished by {killer} in glorious combat!;{killer} struck down {victim} with honor',
-  },
-  heimdallrConfig: {
-    enableCustomScaling: true,
-    playerHealthScalePercent: 30.0,
-    playerDamageScalePercent: 4.0,
-    playerRangeRadius: 100.0,
-    bossHealthMultiplier: 1.25,
-    bossDamageMultiplier: 1.10,
-    enableStarTweaks: true,
-    nightStarBonusChance: 15.0,
-    distanceCenterMultiplier: 1.5,
-    globalOneStarChance: 10.0,
-    globalTwoStarChance: 10.0,
+    overwhelmedMessages: '{victim} was defeated in glorious battle against a horde in the {biome};{victim} fell fighting valiantly against overwhelming odds',
+    genericDeathMessages: '{victim} has departed for the halls of Valhalla;The Norns have cut the thread of {victim}\'s life;{victim} died in the {biome}',
   },
   njororConfig: {
     enableFairWinds: true,
     headwindMitigationPercent: 60.0,
     minWindSpeedMultiplier: 1.0,
     alwaysTailwindInOcean: false,
+    checkDeflectOnWindChange: true,
+    checkDeflectTimeSeconds: 0,
     enableWeatherTuning: true,
     stormFrequencyMultiplier: 1.0,
     rainFrequencyMultiplier: 1.0,
@@ -201,6 +205,7 @@ export const serverState: ValheimServerState = {
     nighttimeSerpentSpawnChance: 5.0,
     serpentSpawnIntervalSeconds: 1000.0,
     allowCalmWeatherDaySerpents: false,
+    enableDebugLogging: false,
   },
   skaldChronicle: [
     {
@@ -243,11 +248,12 @@ export const serverState: ValheimServerState = {
     mode: 'ExitOnly',
     scriptPath: './start_server.sh',
   },
+  pendingChanges: [],
   // All module IDs — when MOCK_MISSING_MODULES=true (via `npm run dev:missing`),
-  // Valgrind and Heimdallr are simulated as not installed on this server.
+  // Valgrind is simulated as not installed on this server.
   installedModules: process.env.MOCK_MISSING_MODULES === 'true'
     ? ['charvault', 'dagrnott', 'skald', 'njoror']
-    : ['charvault', 'valgrind', 'dagrnott', 'skald', 'heimdallr', 'njoror'],
+    : ['charvault', 'valgrind', 'dagrnott', 'skald', 'njoror'],
 };
 
 // Background generator for realistic jitter & logs
@@ -336,8 +342,19 @@ setInterval(() => {
     });
     serverState.uptimeStart = Date.now();
     serverState.scheduledRestart = null;
+    serverState.pendingChanges = [];
   }
 }, 1000);
+
+function recordPendingChange(module: string, moduleName: string) {
+  const existing = serverState.pendingChanges.find(c => c.module.toLowerCase() === module.toLowerCase());
+  const timestamp = new Date().toLocaleTimeString();
+  if (existing) {
+    existing.timestamp = timestamp;
+  } else {
+    serverState.pendingChanges.push({ module, moduleName, timestamp });
+  }
+}
 
 export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse): boolean {
   const url = req.url || '';
@@ -372,12 +389,73 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
     });
   };
 
+  // Auth helper
+  const getExpectedAdminPassword = (): string => {
+    return process.env.VITE_ADMIN_PASSWORD || process.env.MOCK_ADMIN_PASSWORD || 'admin';
+  };
+
+  const isAuthorized = (): boolean => {
+    const expectedPassword = getExpectedAdminPassword();
+    if (expectedPassword.toLowerCase() === 'none' || expectedPassword.toLowerCase() === 'open') return true;
+
+    const adminHeader = req.headers['x-admin-password'];
+    if (adminHeader && adminHeader === expectedPassword) return true;
+
+    const authHeader = req.headers['authorization'];
+    if (authHeader) {
+      if (authHeader.startsWith('Bearer ') && authHeader.slice(7).trim() === expectedPassword) return true;
+      if (authHeader.trim() === expectedPassword) return true;
+    }
+    return false;
+  };
+
+  // 0. Auth Verify, Status & Login
+  if (url === '/api/auth/verify' && method === 'GET') {
+    if (isAuthorized()) {
+      sendJson({ authenticated: true, message: 'Session valid.' });
+    } else {
+      res.statusCode = 401;
+      sendJson({ authenticated: false, message: 'Unauthorized. Admin password required.' });
+    }
+    return true;
+  }
+
+  if (url === '/api/auth/status' && method === 'GET') {
+    const expectedPassword = getExpectedAdminPassword();
+    const required = expectedPassword.toLowerCase() !== 'none' && expectedPassword.toLowerCase() !== 'open';
+    const authenticated = !required || isAuthorized();
+    sendJson({ required, authenticated });
+    return true;
+  }
+
+  if (url === '/api/auth/login' && method === 'POST') {
+    readBody((data) => {
+      const expectedPassword = getExpectedAdminPassword();
+      const provided = data?.password || '';
+      if (expectedPassword.toLowerCase() === 'none' || expectedPassword.toLowerCase() === 'open' || provided === expectedPassword) {
+        sendJson({ success: true, token: provided, message: 'Authentication successful.' });
+      } else {
+        res.statusCode = 401;
+        sendJson({ success: false, message: 'Invalid admin password.' });
+      }
+    });
+    return true;
+  }
+
+  // Auth enforcement for all other /api endpoints in mock server
+  if (!isAuthorized()) {
+    res.statusCode = 401;
+    sendJson({ success: false, error: 'Unauthorized: Admin password required.' });
+    return true;
+  }
+
   // 1. Telemetry
   if (url === '/api/server/telemetry' && method === 'GET') {
     const uptimeSec = Math.floor((Date.now() - serverState.uptimeStart) / 1000);
     const hours = Math.floor(uptimeSec / 3600);
     const mins = Math.floor((uptimeSec % 3600) / 60);
     const fps = +(59.5 + (Math.random() - 0.5) * 0.8).toFixed(1);
+    const ms = (1000 / Math.max(1, fps)).toFixed(1);
 
     sendJson({
       uptime: `${hours}h ${mins}m`,
@@ -385,7 +463,7 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
       onlineCount: serverState.players.length,
       maxPlayers: serverState.maxPlayers,
       fps,
-      tickRate: '20.0ms',
+      tickRate: `${ms}ms`,
       activeZdos: serverState.activeZdos,
       memoryMb: Math.round(serverState.memoryMb),
     });
@@ -577,7 +655,25 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
       } : null,
       dailyRestart: serverState.dailyRestart,
       lifecycleConfig: serverState.lifecycleConfig,
+      pendingChanges: serverState.pendingChanges,
     });
+    return true;
+  }
+
+  if (url === '/api/server/pending-changes' && method === 'GET') {
+    sendJson({ success: true, pendingChanges: serverState.pendingChanges });
+    return true;
+  }
+
+  if (url === '/api/server/clear-pending-changes' && method === 'POST') {
+    serverState.pendingChanges = [];
+    serverState.logs.push({
+      time: new Date().toLocaleTimeString(),
+      source: 'ServerLifecycle',
+      text: 'Pending restart changes notification list cleared by Admin.',
+      level: 'info',
+    });
+    sendJson({ success: true, message: 'Pending changes cleared' });
     return true;
   }
 
@@ -722,12 +818,25 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
 
   if (url === '/api/modules/valgrind/config' && method === 'POST') {
     readBody((data) => {
-      if (typeof data.xpLoss === 'number') serverState.valgrindConfig.xpLoss = data.xpLoss;
-      if (data.calcMode) serverState.valgrindConfig.calcMode = data.calcMode;
+      if (data.calculationMode) serverState.valgrindConfig.calculationMode = data.calculationMode;
+      if (typeof data.useTopNSkillsOnly === 'boolean') serverState.valgrindConfig.useTopNSkillsOnly = data.useTopNSkillsOnly;
+      if (typeof data.topNSkillsCount === 'number') serverState.valgrindConfig.topNSkillsCount = data.topNSkillsCount;
+      if (typeof data.resetAccumulatorOnDeath === 'boolean') serverState.valgrindConfig.resetAccumulatorOnDeath = data.resetAccumulatorOnDeath;
+      if (typeof data.enableDebugLogging === 'boolean') serverState.valgrindConfig.enableDebugLogging = data.enableDebugLogging;
+
+      if (typeof data.earlyGameLossPercent === 'number') serverState.valgrindConfig.earlyGameLossPercent = data.earlyGameLossPercent;
+      if (typeof data.midGameLossPercent === 'number') serverState.valgrindConfig.midGameLossPercent = data.midGameLossPercent;
+      if (typeof data.lateGameLossPercent === 'number') serverState.valgrindConfig.lateGameLossPercent = data.lateGameLossPercent;
+      if (typeof data.endgameLossPercent === 'number') serverState.valgrindConfig.endgameLossPercent = data.endgameLossPercent;
+
+      if (typeof data.curveMaxLossPercent === 'number') serverState.valgrindConfig.curveMaxLossPercent = data.curveMaxLossPercent;
+      if (typeof data.curveMinLossPercent === 'number') serverState.valgrindConfig.curveMinLossPercent = data.curveMinLossPercent;
+
+      recordPendingChange('valgrind', 'Valgrind');
       serverState.logs.push({
         time: new Date().toLocaleTimeString(),
         source: 'Valgrind',
-        text: `Config updated: ${serverState.valgrindConfig.xpLoss}% XP Loss, Mode: ${serverState.valgrindConfig.calcMode}`,
+        text: `Config updated: Mode ${serverState.valgrindConfig.calculationMode} (Restart pending)`,
         level: 'success',
       });
       sendJson({ success: true, config: serverState.valgrindConfig });
@@ -737,19 +846,48 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
 
   // 7. Module: Dagr & Nott
   if (url === '/api/modules/dagrnott/config' && method === 'GET') {
-    sendJson(serverState.dagrNottConfig);
+    const dawnMin = +(4.5 / Math.max(0.001, serverState.dagrNottConfig.dawnMultiplier)).toFixed(1);
+    const dayMin = +(15.0 / Math.max(0.001, serverState.dagrNottConfig.dayMultiplier)).toFixed(1);
+    const duskMin = +(4.5 / Math.max(0.001, serverState.dagrNottConfig.duskMultiplier)).toFixed(1);
+    const nightMin = +(6.0 / Math.max(0.001, serverState.dagrNottConfig.nightMultiplier)).toFixed(1);
+    const totalMin = +(dawnMin + dayMin + duskMin + nightMin).toFixed(1);
+
+    sendJson({
+      ...serverState.dagrNottConfig,
+      dawnMinutes: dawnMin,
+      dayMinutes: dayMin,
+      duskMinutes: duskMin,
+      nightMinutes: nightMin,
+      totalMinutes: totalMin,
+    });
     return true;
   }
 
   if (url === '/api/modules/dagrnott/config' && method === 'POST') {
     readBody((data) => {
-      if (typeof data.totalLength === 'number') serverState.dagrNottConfig.totalLength = data.totalLength;
-      if (typeof data.dayLength === 'number') serverState.dagrNottConfig.dayLength = data.dayLength;
-      if (typeof data.nightLength === 'number') serverState.dagrNottConfig.nightLength = data.nightLength;
+      if (typeof data.dawnMultiplier === 'number') serverState.dagrNottConfig.dawnMultiplier = data.dawnMultiplier;
+      if (typeof data.dayMultiplier === 'number') serverState.dagrNottConfig.dayMultiplier = data.dayMultiplier;
+      if (typeof data.duskMultiplier === 'number') serverState.dagrNottConfig.duskMultiplier = data.duskMultiplier;
+      if (typeof data.nightMultiplier === 'number') serverState.dagrNottConfig.nightMultiplier = data.nightMultiplier;
+      if (typeof data.logPhaseTransitions === 'boolean') serverState.dagrNottConfig.logPhaseTransitions = data.logPhaseTransitions;
+
+      const dawnMin = +(4.5 / Math.max(0.001, serverState.dagrNottConfig.dawnMultiplier)).toFixed(1);
+      const dayMin = +(15.0 / Math.max(0.001, serverState.dagrNottConfig.dayMultiplier)).toFixed(1);
+      const duskMin = +(4.5 / Math.max(0.001, serverState.dagrNottConfig.duskMultiplier)).toFixed(1);
+      const nightMin = +(6.0 / Math.max(0.001, serverState.dagrNottConfig.nightMultiplier)).toFixed(1);
+      const totalMin = +(dawnMin + dayMin + duskMin + nightMin).toFixed(1);
+
+      serverState.dagrNottConfig.dawnMinutes = dawnMin;
+      serverState.dagrNottConfig.dayMinutes = dayMin;
+      serverState.dagrNottConfig.duskMinutes = duskMin;
+      serverState.dagrNottConfig.nightMinutes = nightMin;
+      serverState.dagrNottConfig.totalMinutes = totalMin;
+
+      recordPendingChange('dagrnott', 'Dagr & Nott');
       serverState.logs.push({
         time: new Date().toLocaleTimeString(),
         source: 'DagrAndNott',
-        text: `Diurnal cycle synchronized: ${serverState.dagrNottConfig.totalLength}m total (${serverState.dagrNottConfig.dayLength}m Day / ${serverState.dagrNottConfig.nightLength}m Night)`,
+        text: `Diurnal cycle updated: ~${totalMin}m total (Dawn: ${serverState.dagrNottConfig.dawnMultiplier}x, Day: ${serverState.dagrNottConfig.dayMultiplier}x, Dusk: ${serverState.dagrNottConfig.duskMultiplier}x, Night: ${serverState.dagrNottConfig.nightMultiplier}x) (Restart pending)`,
         level: 'success',
       });
       sendJson({ success: true, config: serverState.dagrNottConfig });
@@ -766,10 +904,11 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
   if (url === '/api/modules/skald/config' && method === 'POST') {
     readBody((data) => {
       serverState.skaldConfig = { ...serverState.skaldConfig, ...data };
+      recordPendingChange('skald', 'Skald');
       serverState.logs.push({
         time: new Date().toLocaleTimeString(),
         source: 'Skald',
-        text: `Skald configuration synchronized (${serverState.skaldConfig.enabled ? 'Announcements Enabled' : 'Disabled'})`,
+        text: `Skald configuration synchronized (${serverState.skaldConfig.enabled ? 'Announcements Enabled' : 'Disabled'}) (Restart pending)`,
         level: 'success',
       });
       sendJson({ success: true, config: serverState.skaldConfig });
@@ -816,26 +955,6 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
     return true;
   }
 
-  // 9. Module: Heimdallr
-  if (url === '/api/modules/heimdallr/config' && method === 'GET') {
-    sendJson(serverState.heimdallrConfig);
-    return true;
-  }
-
-  if (url === '/api/modules/heimdallr/config' && method === 'POST') {
-    readBody((data) => {
-      serverState.heimdallrConfig = { ...serverState.heimdallrConfig, ...data };
-      serverState.logs.push({
-        time: new Date().toLocaleTimeString(),
-        source: 'Heimdallr',
-        text: `Heimdallr scaling synchronized: +${serverState.heimdallrConfig.playerHealthScalePercent}% HP/+${serverState.heimdallrConfig.playerDamageScalePercent}% Dmg per player, Boss HP: ${serverState.heimdallrConfig.bossHealthMultiplier}x`,
-        level: 'success',
-      });
-      sendJson({ success: true, config: serverState.heimdallrConfig });
-    });
-    return true;
-  }
-
   // 10. Module: Njoror
   if (url === '/api/modules/njoror/config' && method === 'GET') {
     sendJson(serverState.njororConfig);
@@ -845,10 +964,11 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
   if (url === '/api/modules/njoror/config' && method === 'POST') {
     readBody((data) => {
       serverState.njororConfig = { ...serverState.njororConfig, ...data };
+      recordPendingChange('njoror', 'Njörðr');
       serverState.logs.push({
         time: new Date().toLocaleTimeString(),
         source: 'Njoror',
-        text: `Njörðr ocean atmospheric parameters synchronized (Headwind mitigation: ${serverState.njororConfig.headwindMitigationPercent}%, Storms: ${serverState.njororConfig.stormFrequencyMultiplier}x, Serpents: ${serverState.njororConfig.nighttimeSerpentSpawnChance}% night / ${serverState.njororConfig.daytimeSerpentSpawnChance}% day)`,
+        text: `Njörðr ocean atmospheric parameters synchronized (Restart pending)`,
         level: 'success',
       });
       sendJson({ success: true, config: serverState.njororConfig });
@@ -862,5 +982,748 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
     return true;
   }
 
+  // 12. Other Mods (3rd Party Configs)
+  if (url === '/api/other-mods/list' && method === 'GET') {
+    const summaries = mockOtherMods.map(m => ({
+      fileName: m.fileName,
+      filePath: m.filePath,
+      displayName: m.displayName,
+      pluginGuid: m.pluginGuid,
+      pluginName: m.pluginName,
+      pluginVersion: m.pluginVersion,
+      sectionCount: m.sections.length,
+      settingCount: m.sections.reduce((acc, s) => acc + s.entries.length, 0),
+      fileSizeBytes: m.rawContent.length,
+      lastModified: m.lastModified,
+      isLoadedInGame: m.isLoadedInGame,
+      isFirstParty: m.isFirstParty,
+    }));
+    sendJson({ mods: summaries });
+    return true;
+  }
+
+  if (url?.startsWith('/api/other-mods/config') && method === 'GET' && !url.includes('/save') && !url.includes('/reset-defaults')) {
+    const urlObj = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
+    const fileParam = urlObj.searchParams.get('file') || '';
+    const mod = mockOtherMods.find(m => m.fileName.toLowerCase() === fileParam.toLowerCase());
+    if (!mod) {
+      sendJson({ success: false, message: `Mod config '${fileParam}' not found.` }, 404);
+      return true;
+    }
+    sendJson({
+      fileName: mod.fileName,
+      displayName: mod.displayName,
+      pluginGuid: mod.pluginGuid,
+      pluginName: mod.pluginName,
+      pluginVersion: mod.pluginVersion,
+      isLoadedInGame: mod.isLoadedInGame,
+      sections: mod.sections,
+      rawContent: generateRawContentFromSections(mod),
+      lastModified: mod.lastModified,
+    });
+    return true;
+  }
+
+  if (url === '/api/other-mods/config/save' && method === 'POST') {
+    readBody((data) => {
+      const fileName = data.fileName || '';
+      const mod = mockOtherMods.find(m => m.fileName.toLowerCase() === fileName.toLowerCase());
+      if (!mod) {
+        sendJson({ success: false, message: `Mod config '${fileName}' not found.` }, 404);
+        return;
+      }
+
+      if (data.saveRaw && typeof data.rawContent === 'string') {
+        mod.rawContent = data.rawContent;
+        parseRawContentIntoSections(mod, data.rawContent);
+      } else if (data.updates) {
+        const updates = data.updates as Record<string, Record<string, string>>;
+        for (const [secName, entries] of Object.entries(updates)) {
+          let sec = mod.sections.find(s => s.name.toLowerCase() === secName.toLowerCase());
+          if (!sec) {
+            sec = { name: secName, entries: [] };
+            mod.sections.push(sec);
+          }
+          for (const [k, v] of Object.entries(entries)) {
+            const entry = sec.entries.find(e => e.key.toLowerCase() === k.toLowerCase());
+            if (entry) {
+              entry.value = String(v);
+            } else {
+              sec.entries.push({
+                key: k,
+                value: String(v),
+                defaultValue: String(v),
+                valueType: 'String',
+                description: '',
+              });
+            }
+          }
+        }
+        mod.rawContent = generateRawContentFromSections(mod);
+      }
+
+      mod.lastModified = new Date().toLocaleString();
+      recordPendingChange(mod.fileName, mod.displayName);
+      serverState.logs.push({
+        time: new Date().toLocaleTimeString(),
+        source: 'ConfigSync',
+        text: `Updated configuration for '${mod.displayName}' (${mod.fileName}) (Restart pending)`,
+        level: 'success',
+      });
+
+      sendJson({
+        success: true,
+        config: {
+          fileName: mod.fileName,
+          displayName: mod.displayName,
+          pluginGuid: mod.pluginGuid,
+          pluginName: mod.pluginName,
+          pluginVersion: mod.pluginVersion,
+          isLoadedInGame: mod.isLoadedInGame,
+          sections: mod.sections,
+          rawContent: mod.rawContent,
+          lastModified: mod.lastModified,
+        },
+      });
+    });
+    return true;
+  }
+
+  if (url === '/api/other-mods/config/reset-defaults' && method === 'POST') {
+    readBody((data) => {
+      const fileName = data.fileName || '';
+      const mod = mockOtherMods.find(m => m.fileName.toLowerCase() === fileName.toLowerCase());
+      if (!mod) {
+        sendJson({ success: false, message: `Mod config '${fileName}' not found.` }, 404);
+        return;
+      }
+
+      for (const sec of mod.sections) {
+        for (const entry of sec.entries) {
+          if (entry.defaultValue !== undefined && entry.defaultValue !== null) {
+            entry.value = entry.defaultValue;
+          }
+        }
+      }
+
+      mod.rawContent = generateRawContentFromSections(mod);
+      mod.lastModified = new Date().toLocaleString();
+      recordPendingChange(mod.fileName, mod.displayName);
+      serverState.logs.push({
+        time: new Date().toLocaleTimeString(),
+        source: 'ConfigSync',
+        text: `Reset configuration defaults for '${mod.displayName}' (${mod.fileName}) (Restart pending)`,
+        level: 'warn',
+      });
+
+      sendJson({
+        success: true,
+        config: {
+          fileName: mod.fileName,
+          displayName: mod.displayName,
+          pluginGuid: mod.pluginGuid,
+          pluginName: mod.pluginName,
+          pluginVersion: mod.pluginVersion,
+          isLoadedInGame: mod.isLoadedInGame,
+          sections: mod.sections,
+          rawContent: mod.rawContent,
+          lastModified: mod.lastModified,
+        },
+      });
+    });
+    return true;
+  }
+
   return false;
 }
+
+// ── Mock Other Mods Database ────────────────────────────────────────────────
+interface MockOtherMod {
+  fileName: string;
+  filePath: string;
+  displayName: string;
+  pluginGuid: string;
+  pluginName: string;
+  pluginVersion: string;
+  isLoadedInGame: boolean;
+  isFirstParty: boolean;
+  lastModified: string;
+  sections: Array<{
+    name: string;
+    entries: Array<{
+      key: string;
+      value: string;
+      defaultValue?: string | null;
+      valueType: string;
+      description: string;
+      acceptableValues?: string[] | null;
+      minRange?: number | null;
+      maxRange?: number | null;
+    }>;
+  }>;
+  rawContent: string;
+}
+
+function generateRawContentFromSections(detail: MockOtherMod): string {
+  const lines: string[] = [
+    `## Configuration file for "${detail.displayName}"`,
+    `## Plugin: ${detail.pluginGuid || detail.fileName} v${detail.pluginVersion || '1.0.0'}`,
+    '',
+  ];
+
+  for (const sec of detail.sections) {
+    lines.push(`[${sec.name}]`, '');
+    for (const e of sec.entries) {
+      if (e.description) {
+        lines.push(`## ${e.description}`);
+      }
+      lines.push(`# Setting type: ${e.valueType}`);
+      if (e.defaultValue !== undefined && e.defaultValue !== null) {
+        lines.push(`# Default value: ${e.defaultValue}`);
+      }
+      if (e.minRange !== undefined && e.minRange !== null && e.maxRange !== undefined && e.maxRange !== null) {
+        lines.push(`# Acceptable value range: From ${e.minRange} to ${e.maxRange}`);
+      }
+      if (e.acceptableValues && e.acceptableValues.length > 0) {
+        lines.push(`# Acceptable values: ${e.acceptableValues.join(', ')}`);
+      }
+      lines.push(`${e.key} = ${e.value}`, '');
+    }
+  }
+  return lines.join('\n');
+}
+
+function parseRawContentIntoSections(mod: MockOtherMod, raw: string): void {
+  const lines = raw.split(/\r?\n/);
+  let currentSecName = 'General';
+  let sec = mod.sections.find(s => s.name.toLowerCase() === currentSecName.toLowerCase());
+  if (!sec) {
+    sec = { name: currentSecName, entries: [] };
+    mod.sections.push(sec);
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#') || line.startsWith(';')) continue;
+    if (line.startsWith('[') && line.endsWith(']')) {
+      currentSecName = line.substring(1, line.length - 1).trim();
+      sec = mod.sections.find(s => s.name.toLowerCase() === currentSecName.toLowerCase());
+      if (!sec) {
+        sec = { name: currentSecName, entries: [] };
+        mod.sections.push(sec);
+      }
+      continue;
+    }
+    const eqIdx = line.indexOf('=');
+    if (eqIdx > 0 && sec) {
+      const key = line.substring(0, eqIdx).trim();
+      const val = line.substring(eqIdx + 1).trim();
+      const entry = sec.entries.find(e => e.key.toLowerCase() === key.toLowerCase());
+      if (entry) {
+        entry.value = val;
+      } else {
+        sec.entries.push({
+          key,
+          value: val,
+          defaultValue: val,
+          valueType: 'String',
+          description: '',
+        });
+      }
+    }
+  }
+}
+
+const mockOtherMods: MockOtherMod[] = [
+  {
+    fileName: 'valheim.drop_that.cfg',
+    filePath: 'valheim.drop_that.cfg',
+    displayName: 'Drop That',
+    pluginGuid: 'valheim.drop_that',
+    pluginName: 'Drop That',
+    pluginVersion: '2.3.14',
+    isLoadedInGame: true,
+    isFirstParty: false,
+    lastModified: '2026-08-28 17:42',
+    sections: [
+      {
+        name: 'General',
+        entries: [
+          {
+            key: 'EnableDropThat',
+            value: 'true',
+            defaultValue: 'true',
+            valueType: 'Boolean',
+            description: 'Enable or disable the Drop That modification system.',
+          },
+          {
+            key: 'AlwaysDropAtLeastOne',
+            value: 'false',
+            defaultValue: 'false',
+            valueType: 'Boolean',
+            description: 'Guarantees that at least one item from the creature drop table will drop on death.',
+          },
+          {
+            key: 'GlobalDropRateMultiplier',
+            value: '1.25',
+            defaultValue: '1.0',
+            valueType: 'Single',
+            description: 'Global scaling multiplier applied to all item drop chances.',
+            minRange: 0.1,
+            maxRange: 10.0,
+          },
+          {
+            key: 'WriteDropTablesToLog',
+            value: 'false',
+            defaultValue: 'false',
+            valueType: 'Boolean',
+            description: 'Dump all creature drop tables to BepInEx log on game load for debugging.',
+          },
+        ],
+      },
+      {
+        name: 'DropRules',
+        entries: [
+          {
+            key: 'ApplyToBosses',
+            value: 'true',
+            defaultValue: 'true',
+            valueType: 'Boolean',
+            description: 'Apply custom drop multiplier calculations to Bosses and Mini-Bosses.',
+          },
+          {
+            key: 'PreserveVanillaDropChance',
+            value: 'true',
+            defaultValue: 'true',
+            valueType: 'Boolean',
+            description: 'When true, vanilla items retain their base drop weights alongside custom added items.',
+          },
+          {
+            key: 'MaxDropDistance',
+            value: '5.0',
+            defaultValue: '4.0',
+            valueType: 'Single',
+            description: 'Maximum distance from creature corpse where items may scatter upon death.',
+            minRange: 1.0,
+            maxRange: 20.0,
+          },
+        ],
+      },
+    ],
+    rawContent: '',
+  },
+  {
+    fileName: 'org.bepinex.plugins.valheim_plus.cfg',
+    filePath: 'org.bepinex.plugins.valheim_plus.cfg',
+    displayName: 'Valheim Plus',
+    pluginGuid: 'org.bepinex.plugins.valheim_plus',
+    pluginName: 'Valheim Plus',
+    pluginVersion: '0.9.9.11',
+    isLoadedInGame: true,
+    isFirstParty: false,
+    lastModified: '2026-08-30 09:14',
+    sections: [
+      {
+        name: 'General',
+        entries: [
+          {
+            key: 'Enabled',
+            value: 'true',
+            defaultValue: 'true',
+            valueType: 'Boolean',
+            description: 'Master switch to enable Valheim Plus modifications.',
+          },
+          {
+            key: 'EnforceMod',
+            value: 'false',
+            defaultValue: 'false',
+            valueType: 'Boolean',
+            description: 'Require connected players to have matching Valheim Plus installed.',
+          },
+        ],
+      },
+      {
+        name: 'Player',
+        entries: [
+          {
+            key: 'BaseMaximumWeight',
+            value: '350',
+            defaultValue: '300',
+            valueType: 'Single',
+            description: 'Maximum carrying weight capacity before becoming encumbered.',
+            minRange: 100,
+            maxRange: 1500,
+          },
+          {
+            key: 'BaseAutoPickupRange',
+            value: '3.0',
+            defaultValue: '2.0',
+            valueType: 'Single',
+            description: 'Radius in meters around player to automatically vacuum up dropped items.',
+            minRange: 1.0,
+            maxRange: 15.0,
+          },
+          {
+            key: 'StaminaRegenMultiplier',
+            value: '1.15',
+            defaultValue: '1.0',
+            valueType: 'Single',
+            description: 'Multiplier for base stamina regeneration rate.',
+            minRange: 0.1,
+            maxRange: 5.0,
+          },
+          {
+            key: 'CropHarvestMultiplier',
+            value: '2',
+            defaultValue: '1',
+            valueType: 'Int32',
+            description: 'Item multiplier when harvesting planted crops like barley, flax, carrots.',
+            minRange: 1,
+            maxRange: 10,
+          },
+        ],
+      },
+      {
+        name: 'Building',
+        entries: [
+          {
+            key: 'NoInvalidPlacement',
+            value: 'true',
+            defaultValue: 'false',
+            valueType: 'Boolean',
+            description: 'Removes the invalid placement restrictions for building pieces (e.g. clipping).',
+          },
+          {
+            key: 'DisableStructuralIntegrity',
+            value: 'false',
+            defaultValue: 'false',
+            valueType: 'Boolean',
+            description: 'Disables structural support physics, allowing infinite building height.',
+          },
+          {
+            key: 'PiecePlacementDamageMultiplier',
+            value: '1.0',
+            defaultValue: '1.0',
+            valueType: 'Single',
+            description: 'Damage multiplier dealt to building pieces by enemies.',
+            minRange: 0.0,
+            maxRange: 5.0,
+          },
+        ],
+      },
+      {
+        name: 'Inventory',
+        entries: [
+          {
+            key: 'PlayerInventoryRows',
+            value: '5',
+            defaultValue: '4',
+            valueType: 'Int32',
+            description: 'Number of rows in the player inventory (4 = default 32 slots).',
+            acceptableValues: ['4', '5', '6', '7', '8'],
+          },
+          {
+            key: 'WoodChestRows',
+            value: '3',
+            defaultValue: '2',
+            valueType: 'Int32',
+            description: 'Number of inventory rows in wooden chests.',
+            acceptableValues: ['2', '3', '4'],
+          },
+          {
+            key: 'IronChestRows',
+            value: '5',
+            defaultValue: '4',
+            valueType: 'Int32',
+            description: 'Number of inventory rows in reinforced iron chests.',
+            acceptableValues: ['4', '5', '6'],
+          },
+        ],
+      },
+    ],
+    rawContent: '',
+  },
+  {
+    fileName: 'advize.PlantEverything.cfg',
+    filePath: 'advize.PlantEverything.cfg',
+    displayName: 'Plant Everything',
+    pluginGuid: 'advize.PlantEverything',
+    pluginName: 'Plant Everything',
+    pluginVersion: '1.16.2',
+    isLoadedInGame: true,
+    isFirstParty: false,
+    lastModified: '2026-08-25 12:20',
+    sections: [
+      {
+        name: 'General',
+        entries: [
+          {
+            key: 'EnableMod',
+            value: 'true',
+            defaultValue: 'true',
+            valueType: 'Boolean',
+            description: 'Enable Plant Everything farming capabilities.',
+          },
+          {
+            key: 'EnforceServerConfig',
+            value: 'true',
+            defaultValue: 'true',
+            valueType: 'Boolean',
+            description: 'Force connecting clients to synchronize with server crop configs.',
+          },
+        ],
+      },
+      {
+        name: 'Difficulty',
+        entries: [
+          {
+            key: 'RequireCultivatedGround',
+            value: 'false',
+            defaultValue: 'true',
+            valueType: 'Boolean',
+            description: 'Require ground to be cultivated before berry bushes or mushrooms can be planted.',
+          },
+          {
+            key: 'GrowthTimeMultiplier',
+            value: '0.85',
+            defaultValue: '1.0',
+            valueType: 'Single',
+            description: 'Growth time speed multiplier for all custom planted flora.',
+            minRange: 0.1,
+            maxRange: 5.0,
+          },
+          {
+            key: 'BerryBushesRespawnTime',
+            value: '300',
+            defaultValue: '300',
+            valueType: 'Single',
+            description: 'Time in minutes for harvested berry bushes to respawn fresh berries.',
+            minRange: 30,
+            maxRange: 1440,
+          },
+        ],
+      },
+      {
+        name: 'Snapping',
+        entries: [
+          {
+            key: 'EnableGridSnapping',
+            value: 'true',
+            defaultValue: 'true',
+            valueType: 'Boolean',
+            description: 'Enable snapping flora pieces to clean crop grid alignments.',
+          },
+          {
+            key: 'GridSnapDegrees',
+            value: '45',
+            defaultValue: '45',
+            valueType: 'Single',
+            description: 'Angular snap step for rotating plants with the cultivator.',
+            acceptableValues: ['15', '30', '45', '90'],
+          },
+        ],
+      },
+    ],
+    rawContent: '',
+  },
+  {
+    fileName: 'Smoothbrain.CreatureLevelAndLootControl.cfg',
+    filePath: 'Smoothbrain.CreatureLevelAndLootControl.cfg',
+    displayName: 'Creature Level & Loot Control',
+    pluginGuid: 'Smoothbrain.CreatureLevelAndLootControl',
+    pluginName: 'Creature Level & Loot Control',
+    pluginVersion: '4.5.8',
+    isLoadedInGame: true,
+    isFirstParty: false,
+    lastModified: '2026-08-31 20:05',
+    sections: [
+      {
+        name: 'General',
+        entries: [
+          {
+            key: 'MaxLevel',
+            value: '5',
+            defaultValue: '5',
+            valueType: 'Int32',
+            description: 'Maximum star tier creatures can spawn with (up to 5-star).',
+            minRange: 1,
+            maxRange: 10,
+          },
+          {
+            key: 'LootMultiplier',
+            value: '1.5',
+            defaultValue: '1.0',
+            valueType: 'Single',
+            description: 'Extra loot multiplier gained per creature star tier.',
+            minRange: 0.5,
+            maxRange: 5.0,
+          },
+          {
+            key: 'EnableSpecialEffects',
+            value: 'true',
+            defaultValue: 'true',
+            valueType: 'Boolean',
+            description: 'Render glowing elemental particles on infused creatures.',
+          },
+        ],
+      },
+      {
+        name: 'CreatureScaling',
+        entries: [
+          {
+            key: 'HealthIncreasePerLevelPercent',
+            value: '50.0',
+            defaultValue: '50.0',
+            valueType: 'Single',
+            description: 'Percentage increase to maximum HP per star level.',
+            minRange: 10.0,
+            maxRange: 200.0,
+          },
+          {
+            key: 'DamageIncreasePerLevelPercent',
+            value: '25.0',
+            defaultValue: '20.0',
+            valueType: 'Single',
+            description: 'Percentage increase to physical/elemental attack power per star.',
+            minRange: 5.0,
+            maxRange: 100.0,
+          },
+          {
+            key: 'SizeIncreasePerLevelPercent',
+            value: '10.0',
+            defaultValue: '10.0',
+            valueType: 'Single',
+            description: 'Scale multiplier increasing creature physical model size per star level.',
+            minRange: 0.0,
+            maxRange: 50.0,
+          },
+        ],
+      },
+    ],
+    rawContent: '',
+  },
+  {
+    fileName: 'ComfyMods.Gizmo.cfg',
+    filePath: 'ComfyMods.Gizmo.cfg',
+    displayName: 'Gizmo Reloaded',
+    pluginGuid: 'ComfyMods.Gizmo',
+    pluginName: 'Gizmo Reloaded',
+    pluginVersion: '1.5.0',
+    isLoadedInGame: true,
+    isFirstParty: false,
+    lastModified: '2026-08-15 14:22',
+    sections: [
+      {
+        name: 'General',
+        entries: [
+          {
+            key: 'Enabled',
+            value: 'true',
+            defaultValue: 'true',
+            valueType: 'Boolean',
+            description: 'Enable 3-axis rotation gizmo for building hammer.',
+          },
+          {
+            key: 'SnapAngles',
+            value: '16',
+            defaultValue: '16',
+            valueType: 'Int32',
+            description: 'Number of discrete rotation snap steps per 360-degree full circle.',
+            acceptableValues: ['8', '16', '32', '64', '128'],
+          },
+          {
+            key: 'ShowVisualGuide',
+            value: 'true',
+            defaultValue: 'true',
+            valueType: 'Boolean',
+            description: 'Display 3D colored rotation circles around the active piece.',
+          },
+        ],
+      },
+      {
+        name: 'Keybinds',
+        entries: [
+          {
+            key: 'RotateXModifier',
+            value: 'LeftShift',
+            defaultValue: 'LeftShift',
+            valueType: 'String',
+            description: 'Key modifier to rotate piece around the pitch (X) axis with scroll wheel.',
+          },
+          {
+            key: 'RotateZModifier',
+            value: 'LeftAlt',
+            defaultValue: 'LeftAlt',
+            valueType: 'String',
+            description: 'Key modifier to rotate piece around the roll (Z) axis with scroll wheel.',
+          },
+          {
+            key: 'ResetRotationKey',
+            value: 'V',
+            defaultValue: 'V',
+            valueType: 'String',
+            description: 'Hotkey to immediately reset piece rotation to default orientation.',
+          },
+        ],
+      },
+    ],
+    rawContent: '',
+  },
+  {
+    fileName: 'denikson.Quick_Slots_Plus.cfg',
+    filePath: 'denikson.Quick_Slots_Plus.cfg',
+    displayName: 'Quick Slots Plus',
+    pluginGuid: 'denikson.Quick_Slots_Plus',
+    pluginName: 'Quick Slots Plus',
+    pluginVersion: '1.4.1',
+    isLoadedInGame: true,
+    isFirstParty: false,
+    lastModified: '2026-08-20 18:30',
+    sections: [
+      {
+        name: 'General',
+        entries: [
+          {
+            key: 'Enabled',
+            value: 'true',
+            defaultValue: 'true',
+            valueType: 'Boolean',
+            description: 'Enable dedicated equipment and potion quick access slots.',
+          },
+          {
+            key: 'EquipmentSlotsCount',
+            value: '5',
+            defaultValue: '5',
+            valueType: 'Int32',
+            description: 'Number of armor and accessory equipment slots (Helmet, Chest, Legs, Cape, Utility).',
+            minRange: 1,
+            maxRange: 8,
+          },
+          {
+            key: 'QuickItemSlotsCount',
+            value: '3',
+            defaultValue: '3',
+            valueType: 'Int32',
+            description: 'Number of extra hotbar quick item slots (Z, X, V keys).',
+            minRange: 1,
+            maxRange: 6,
+          },
+          {
+            key: 'ShowInventoryStats',
+            value: 'true',
+            defaultValue: 'true',
+            valueType: 'Boolean',
+            description: 'Show composite armor and set bonus stats tooltip above inventory.',
+          },
+        ],
+      },
+    ],
+    rawContent: '',
+  },
+];
+
+// Initialize raw content for all mock mods
+for (const m of mockOtherMods) {
+  m.rawContent = generateRawContentFromSections(m);
+}
+

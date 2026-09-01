@@ -318,7 +318,7 @@ export default function DashboardTab() {
           </div>
           <div>
             <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Server Uptime</p>
-            <h3 className="text-2xl font-bold text-gray-100 font-mono mt-0.5">{telemetry.uptime}</h3>
+            <h3 className="text-2xl font-bold text-gray-100 font-mono mt-0.5">{telemetry?.uptime ?? '0s'}</h3>
           </div>
         </div>
 
@@ -329,8 +329,8 @@ export default function DashboardTab() {
           <div>
             <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Online Players</p>
             <div className="flex items-baseline space-x-1 mt-0.5">
-              <h3 className="text-2xl font-bold text-gray-100 font-mono">{telemetry.onlineCount}</h3>
-              <span className="text-xs text-gray-400 font-mono">/ {telemetry.maxPlayers}</span>
+              <h3 className="text-2xl font-bold text-gray-100 font-mono">{telemetry?.onlineCount ?? 0}</h3>
+              <span className="text-xs text-gray-400 font-mono">/ {telemetry?.maxPlayers ?? 10}</span>
             </div>
           </div>
         </div>
@@ -342,7 +342,7 @@ export default function DashboardTab() {
           <div>
             <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Tick Rate / FPS</p>
             <div className="flex items-baseline space-x-1 mt-0.5">
-              <h3 className="text-2xl font-bold text-gray-100 font-mono">{telemetry.fps}</h3>
+              <h3 className="text-2xl font-bold text-gray-100 font-mono">{telemetry?.fps ?? 0}</h3>
               <span className="text-xs text-gray-400 font-mono">fps</span>
             </div>
           </div>
@@ -354,7 +354,7 @@ export default function DashboardTab() {
           </div>
           <div>
             <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Active ZDOs</p>
-            <h3 className="text-2xl font-bold text-gray-100 font-mono mt-0.5">{telemetry.activeZdos.toLocaleString()}</h3>
+            <h3 className="text-2xl font-bold text-gray-100 font-mono mt-0.5">{(telemetry?.activeZdos ?? 0).toLocaleString()}</h3>
           </div>
         </div>
       </div>
@@ -457,7 +457,23 @@ export default function DashboardTab() {
                             <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                             <span>{p.name}</span>
                           </td>
-                          <td className="px-5 py-3.5 font-mono text-xs text-gray-400">{p.steamId}</td>
+                          <td className="px-5 py-3.5 font-mono text-xs" onClick={(e) => e.stopPropagation()}>
+                            {(() => {
+                              const numericId = p.steamId.replace(/^Steam_/i, '');
+                              const profileUrl = `https://steamcommunity.com/profiles/${numericId}`;
+                              return (
+                                <a
+                                  href={profileUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-gray-400 hover:text-orange-300 hover:underline underline-offset-2 transition-colors"
+                                  title={`Open Steam profile for ${numericId}`}
+                                >
+                                  {p.steamId}
+                                </a>
+                              );
+                            })()}
+                          </td>
                           <td className="px-5 py-3.5">
                             <span className="bg-gray-800/80 px-2.5 py-1 rounded-md text-xs text-gray-300 border border-gray-700/50">
                               {p.zone}
