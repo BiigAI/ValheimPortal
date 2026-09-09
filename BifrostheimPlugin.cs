@@ -12,7 +12,7 @@ namespace Bifrostheim
     {
         public const string PluginGUID = "com.bigai.bigfrost_serverportal";
         public const string PluginName = "Bigfrost_ServerPortal";
-        public const string PluginVersion = "1.0.0";
+        public const string PluginVersion = "1.0.1";
 
         public static BifrostheimPlugin Instance { get; private set; } = null!;
         public static ManualLogSource Log { get; private set; } = null!;

@@ -683,17 +683,33 @@ namespace Bifrostheim.Helpers
                 // If root is a dictionary
                 if (parsed is IDictionary<string, object?> dict)
                 {
+                    // Check if root dict itself is a single binding record object (e.g. { "PlayerId": "...", "CharacterName": "..." })
+                    bool isSingleRecordObject = dict.Keys.Any(k =>
+                        k.Equals("characterName", StringComparison.OrdinalIgnoreCase) ||
+                        k.Equals("character_name", StringComparison.OrdinalIgnoreCase) ||
+                        k.Equals("boundCharacter", StringComparison.OrdinalIgnoreCase)) ||
+                        ((dict.Keys.Any(k => k.Equals("playerId", StringComparison.OrdinalIgnoreCase) || k.Equals("steamId", StringComparison.OrdinalIgnoreCase))) &&
+                         dict.Values.All(v => v is not IDictionary<string, object?>));
+
+                    if (isSingleRecordObject)
+                    {
+                        return ParseListBindings(new List<object> { dict });
+                    }
+
                     // Check for single wrapper key like { "bindings": { ... } } or { "characters": [ ... ] }
                     if (dict.Count == 1)
                     {
                         var first = dict.First();
-                        if (first.Value is IDictionary<string, object?> wrappedDict)
-                        {
-                            dict = wrappedDict;
-                        }
-                        else if (first.Value is System.Collections.IList wrappedList)
+                        string firstKeyLower = first.Key.ToLowerInvariant();
+                        var wrapperKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "bindings", "characters", "data", "records", "items", "vault", "list", "map" };
+
+                        if (first.Value is System.Collections.IList wrappedList)
                         {
                             return ParseListBindings(wrappedList);
+                        }
+                        else if (wrapperKeys.Contains(firstKeyLower) && first.Value is IDictionary<string, object?> wrappedDict)
+                        {
+                            dict = wrappedDict;
                         }
                     }
 
@@ -713,6 +729,21 @@ namespace Bifrostheim.Helpers
                         }
                         else if (val is IDictionary<string, object?> childDict)
                         {
+                            // If childDict contains a specific steamId / playerId property, prefer it if valid
+                            string[] steamCandidateKeys = new[] { "steamId", "steam_id", "steamID", "id", "playerId", "player_id", "userId" };
+                            foreach (var sKey in steamCandidateKeys)
+                            {
+                                if (TryGetCaseInsensitive(childDict, sKey, out object? sVal) && sVal != null)
+                                {
+                                    string candidate = sVal.ToString() ?? "";
+                                    if (!string.IsNullOrWhiteSpace(candidate))
+                                    {
+                                        steamId = candidate;
+                                        break;
+                                    }
+                                }
+                            }
+
                             ExtractBindingFromDict(childDict, steamId, out characterName, out created, out lastLogin, out var extStatus);
                             if (!string.IsNullOrWhiteSpace(extStatus)) status = extStatus!;
                         }
@@ -1034,7 +1065,8 @@ namespace Bifrostheim.Helpers
             {
                 "created", "createdAt", "created_at", "creationDate", "creation_date",
                 "createDate", "create_date", "dateCreated", "date_created",
-                "timestamp", "bindingDate", "binding_date", "boundAt", "bound_at", "date"
+                "timestamp", "bindingDate", "binding_date", "boundAt", "bound_at", "date",
+                "registeredAt", "registered_at", "registered", "registeredDate", "RegisteredAt"
             };
 
             foreach (var key in createdCandidateKeys)
@@ -1049,7 +1081,7 @@ namespace Bifrostheim.Helpers
             // 3. Last Login candidates
             string[] loginCandidateKeys = new[]
             {
-                "lastLogin", "last_login", "lastSeen", "last_seen",
+                "lastLogin", "last_login", "lastSeen", "last_seen", "lastSeenAt", "last_seen_at", "LastSeenAt",
                 "lastConnected", "last_connected", "lastOnline", "last_online",
                 "loginTime", "login_time", "updatedAt", "updated_at",
                 "lastActive", "last_active", "modified", "lastModified", "last_modified"
@@ -1154,7 +1186,9 @@ namespace Bifrostheim.Helpers
                     if (dict.Count == 1)
                     {
                         var firstEntry = dict.First();
-                        if (firstEntry.Value is IDictionary<string, object?> innerDict)
+                        string firstKeyLower = firstEntry.Key.ToLowerInvariant();
+                        var wrapperKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "bindings", "characters", "data", "records", "items", "vault", "list", "map" };
+                        if (wrapperKeys.Contains(firstKeyLower) && firstEntry.Value is IDictionary<string, object?> innerDict)
                         {
                             targetDict = innerDict;
                         }
@@ -1166,6 +1200,18 @@ namespace Bifrostheim.Helpers
                         if (IsSteamIdMatch(key, steamId))
                         {
                             keysToRemove.Add(key);
+                        }
+                        else if (targetDict[key] is IDictionary<string, object?> itemDict)
+                        {
+                            string[] steamCandidateKeys = new[] { "steamId", "steam_id", "steamID", "id", "playerId", "player_id", "userId", "key", "account" };
+                            foreach (var k in steamCandidateKeys)
+                            {
+                                if (TryGetCaseInsensitive(itemDict, k, out object? val) && val != null && IsSteamIdMatch(val.ToString() ?? "", steamId))
+                                {
+                                    keysToRemove.Add(key);
+                                    break;
+                                }
+                            }
                         }
                     }
 
