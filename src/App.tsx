@@ -124,7 +124,7 @@ function MainLayout({ onLogout }: { onLogout: () => void }) {
               <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-orange-400 via-amber-300 to-yellow-200 tracking-tight">
                 Bigfrost
               </h1>
-              <p className="text-xs text-gray-400 font-mono tracking-wide">v1.0.1 • Dedicated</p>
+              <p className="text-xs text-gray-400 font-mono tracking-wide">v1.0.2 • Dedicated</p>
             </div>
           </div>
         </div>

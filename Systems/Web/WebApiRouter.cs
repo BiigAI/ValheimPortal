@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -18,6 +19,10 @@ namespace Bifrostheim.Systems.Web
         private static readonly DateTime StartTime = DateTime.UtcNow;
         private static readonly List<ConsoleLogEntry> LogsBuffer = new List<ConsoleLogEntry>();
         private static readonly object LogLock = new object();
+
+        // In-memory rate limiting for brute-force prevention only. Never stored to disk, never transmitted.
+        private static readonly ConcurrentDictionary<string, (int attempts, DateTime lockoutUntil)> _loginRateLimits =
+            new ConcurrentDictionary<string, (int attempts, DateTime lockoutUntil)>(StringComparer.OrdinalIgnoreCase);
 
         private static ScheduledRestartState _scheduledRestart = new ScheduledRestartState();
         private static DailyRestartState _dailyRestart = new DailyRestartState();
@@ -389,7 +394,7 @@ namespace Bifrostheim.Systems.Web
             string pwd = BifrostheimPlugin.WebAdminPassword?.Value ?? WebPortalServer.AdminPassword;
             if (string.IsNullOrWhiteSpace(pwd))
             {
-                return "admin"; // Default password fallback to ensure web portal is never open without a password
+                return string.Empty;
             }
             return pwd;
         }
@@ -397,6 +402,11 @@ namespace Bifrostheim.Systems.Web
         public static bool IsAuthorized(HttpListenerRequest request)
         {
             string expectedPassword = GetConfiguredAdminPassword();
+            if (string.IsNullOrWhiteSpace(expectedPassword))
+            {
+                return false;
+            }
+
             if (string.Equals(expectedPassword, "none", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(expectedPassword, "open", StringComparison.OrdinalIgnoreCase))
             {
@@ -446,7 +456,8 @@ namespace Bifrostheim.Systems.Web
         private static async Task HandleAuthStatus(HttpListenerRequest request, HttpListenerResponse response)
         {
             string expectedPassword = GetConfiguredAdminPassword();
-            bool required = !string.Equals(expectedPassword, "none", StringComparison.OrdinalIgnoreCase) &&
+            bool required = !string.IsNullOrWhiteSpace(expectedPassword) &&
+                            !string.Equals(expectedPassword, "none", StringComparison.OrdinalIgnoreCase) &&
                             !string.Equals(expectedPassword, "open", StringComparison.OrdinalIgnoreCase);
             bool authenticated = !required || IsAuthorized(request);
 
@@ -455,27 +466,68 @@ namespace Bifrostheim.Systems.Web
 
         private static async Task HandleAuthLogin(HttpListenerRequest request, HttpListenerResponse response, string clientIp)
         {
+            // Enforce temporary lockout if IP exceeded maximum failed attempts
+            if (_loginRateLimits.TryGetValue(clientIp, out var limitState) && DateTime.UtcNow < limitState.lockoutUntil)
+            {
+                int remainingSec = Math.Max(1, (int)(limitState.lockoutUntil - DateTime.UtcNow).TotalSeconds);
+                AddLog("warn", "AUTH", $"Blocked login attempt from locked-out address {clientIp} ({remainingSec}s remaining).");
+                await SendJsonAsync(response, 429, new { success = false, message = $"Too many failed attempts. Try again in {remainingSec} seconds." });
+                return;
+            }
+
             string body = await ReadBodyAsync(request);
             var req = SimpleJson.DeserializeObject<AuthRequest>(body);
             string providedPassword = req?.password ?? string.Empty;
             string expectedPassword = GetConfiguredAdminPassword();
 
-            if (string.Equals(expectedPassword, "none", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(expectedPassword, "open", StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrWhiteSpace(expectedPassword) &&
+                (string.Equals(expectedPassword, "none", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(expectedPassword, "open", StringComparison.OrdinalIgnoreCase)))
             {
                 await SendJsonAsync(response, 200, new { success = true, token = providedPassword, message = "Authentication successful (open access)." });
                 return;
             }
 
-            if (string.Equals(providedPassword, expectedPassword, StringComparison.Ordinal))
+            if (!string.IsNullOrWhiteSpace(expectedPassword) &&
+                !string.IsNullOrWhiteSpace(providedPassword) &&
+                string.Equals(providedPassword, expectedPassword, StringComparison.Ordinal))
             {
+                _loginRateLimits.TryRemove(clientIp, out _);
                 AddLog("info", "AUTH", $"Admin login successful from {clientIp}.");
                 await SendJsonAsync(response, 200, new { success = true, token = providedPassword, message = "Authentication successful." });
             }
             else
             {
-                AddLog("warn", "AUTH", $"Failed admin login attempt from {clientIp}.");
-                await SendJsonAsync(response, 401, new { success = false, message = "Invalid admin password." });
+                int attempts = 1;
+                DateTime lockout = DateTime.MinValue;
+                if (_loginRateLimits.TryGetValue(clientIp, out var curr))
+                {
+                    attempts = curr.attempts + 1;
+                }
+
+                if (attempts >= 5)
+                {
+                    lockout = DateTime.UtcNow.AddMinutes(5);
+                    AddLog("warn", "AUTH", $"Multiple failed admin login attempts from {clientIp}. Locked out for 5 minutes.");
+                }
+                else
+                {
+                    AddLog("warn", "AUTH", $"Failed admin login attempt from {clientIp} (Attempt {attempts}/5).");
+                }
+
+                _loginRateLimits[clientIp] = (attempts, lockout);
+
+                // Artificial delay to mitigate automated high-frequency brute-forcing
+                await Task.Delay(1000);
+
+                if (attempts >= 5)
+                {
+                    await SendJsonAsync(response, 429, new { success = false, message = "Too many failed attempts. Locked out for 5 minutes." });
+                }
+                else
+                {
+                    await SendJsonAsync(response, 401, new { success = false, message = "Invalid admin password." });
+                }
             }
         }
 
@@ -523,7 +575,6 @@ namespace Bifrostheim.Systems.Web
                 }
             });
 
-            float fps = 1.0f / Mathf.Max(Time.unscaledDeltaTime, 0.0001f);
             long memoryMb = GC.GetTotalMemory(false) / (1024 * 1024);
 
             var telemetry = new ServerTelemetryDto
@@ -532,7 +583,7 @@ namespace Bifrostheim.Systems.Web
                 uptimeSeconds = (long)uptimeSpan.TotalSeconds,
                 onlineCount = onlineCount,
                 maxPlayers = maxPlayers,
-                fps = (int)Math.Round(fps),
+                fps = BifrostheimPlugin.CurrentFps,
                 tickRate = "50 Hz",
                 activeZdos = activeZdos,
                 memoryMb = (int)memoryMb
@@ -640,6 +691,18 @@ namespace Bifrostheim.Systems.Web
                 if (ZNet.instance != null)
                 {
                     ZNet.instance.Ban(name);
+
+                    // Immediately disconnect active connection if online
+                    var peers = ZNetHelper.GetPeers();
+                    foreach (var peer in peers)
+                    {
+                        if (peer != null && (string.Equals(peer.m_playerName, name, StringComparison.OrdinalIgnoreCase) ||
+                                             string.Equals(ZNetHelper.GetPlayerId(peer), name, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            ZNet.instance.Disconnect(peer);
+                            break;
+                        }
+                    }
                 }
             });
 
@@ -939,13 +1002,14 @@ namespace Bifrostheim.Systems.Web
         {
             string body = await ReadBodyAsync(request);
             var req = SimpleJson.DeserializeObject<LifecycleConfigState>(body);
-            if (req != null)
+            if (req != null && !string.IsNullOrWhiteSpace(req.mode))
             {
-                _lifecycleConfig = req;
+                string safeMode = req.mode.Equals("SpawnProcess", StringComparison.OrdinalIgnoreCase) ? "SpawnProcess" : "ExitOnly";
+                _lifecycleConfig.mode = safeMode;
                 if (BifrostheimPlugin.LifecycleRestartMode != null)
-                    BifrostheimPlugin.LifecycleRestartMode.Value = req.mode;
-                if (BifrostheimPlugin.LifecycleScriptPath != null)
-                    BifrostheimPlugin.LifecycleScriptPath.Value = req.scriptPath;
+                {
+                    BifrostheimPlugin.LifecycleRestartMode.Value = safeMode;
+                }
                 try
                 {
                     BifrostheimPlugin.Instance?.Config?.Save();
@@ -958,7 +1022,7 @@ namespace Bifrostheim.Systems.Web
                 mode = BifrostheimPlugin.LifecycleRestartMode?.Value ?? _lifecycleConfig.mode,
                 scriptPath = BifrostheimPlugin.LifecycleScriptPath?.Value ?? _lifecycleConfig.scriptPath
             };
-            AddLog("info", "RESTART", $"Updated restart strategy: {saved.mode} (Saved to config).");
+            AddLog("info", "RESTART", $"Updated restart strategy: {saved.mode} (Saved to config). Custom scriptPath is managed locally on host.");
             await SendJsonAsync(response, 200, new { success = true, lifecycleConfig = saved });
         }
 
@@ -1068,12 +1132,19 @@ namespace Bifrostheim.Systems.Web
                     {
                         try
                         {
-                            BifrostheimPlugin.Log?.LogInfo($"[WebApiRouter] Spawning external restart process: '{lifeScript}'");
-                            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                            if (File.Exists(lifeScript))
                             {
-                                FileName = lifeScript,
-                                UseShellExecute = true
-                            });
+                                BifrostheimPlugin.Log?.LogInfo($"[WebApiRouter] Spawning external restart process: '{lifeScript}'");
+                                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                                {
+                                    FileName = lifeScript,
+                                    UseShellExecute = false
+                                });
+                            }
+                            else
+                            {
+                                BifrostheimPlugin.Log?.LogWarning($"[WebApiRouter] Configured restart script '{lifeScript}' does not exist on disk. Skipping spawn.");
+                            }
                         }
                         catch (Exception pEx)
                         {
@@ -1393,6 +1464,11 @@ namespace Bifrostheim.Systems.Web
             response.StatusCode = statusCode;
             response.ContentType = "application/json; charset=utf-8";
             response.ContentLength64 = bytes.Length;
+            try
+            {
+                response.Headers["Access-Control-Allow-Origin"] = "*";
+            }
+            catch { }
 
             using (var stream = response.OutputStream)
             {

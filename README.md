@@ -17,8 +17,8 @@ A homage to **Bifröst**—the mythical burning rainbow bridge connecting Midgar
 ---
 
 ### Installation Type
-- **Location:** Server-only. Clients do not need the mod installed.
-- **Enforcement:** Optional on clients; accessed via standard web browsers.
+- **Location:** Dedicated Server-only. The mod will automatically detect and refuse to run a web server if placed in a client's plugins directory.
+- **Access:** Accessed remotely via standard web browsers.
 
 ### Manual Install
 1. Ensure BepInEx is installed on your dedicated server.
@@ -36,7 +36,7 @@ The configuration file is automatically created at `BepInEx/config/com.bigai.big
 | :--- | :--- | :--- | :--- |
 | `WebPortal` | `EnableWebPortal` | `true` | Enable the embedded web management portal. |
 | `WebPortal` | `WebPortalPort` | `8080` | Port for the embedded web management portal. |
-| `WebPortal` | `WebAdminPassword` | `""` | Password required for administrative actions in the web portal. |
+| `WebPortal` | `WebAdminPassword` | `""` | Password required for administrative actions in the web portal (automatically generated as a secure random string on first startup). |
 | `General` | `VerboseLogging` | `false` | Enable verbose logging in BepInEx console. |
 | `Lifecycle` | `RestartMode` | `ExitOnly` | Server restart strategy (`ExitOnly` or `SpawnProcess`). |
 | `Lifecycle` | `RestartScriptPath` | `./start_server.sh` | Path to external restart script when `RestartMode` is `SpawnProcess`. |

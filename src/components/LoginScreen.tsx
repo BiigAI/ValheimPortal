@@ -104,7 +104,7 @@ export default function LoginScreen() {
           {/* Footer */}
           <div className="mt-6 pt-5 border-t border-gray-800/50 text-center">
             <p className="text-[11px] text-gray-500 font-mono">
-              Bigfrost v1.0.1 • BepInEx HTTP Bridge
+              Bigfrost v1.0.2 • BepInEx HTTP Bridge
             </p>
           </div>
         </div>

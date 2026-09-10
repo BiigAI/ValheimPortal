@@ -1632,7 +1632,20 @@ namespace Bifrostheim.Helpers
         {
             string configDir = GetConfigDirectory();
             string safeName = Path.GetFileName(req.fileName);
+
+            // Security guard: Strictly enforce that target file has .cfg extension and already exists
+            if (!safeName.EndsWith(".cfg", StringComparison.OrdinalIgnoreCase))
+            {
+                BifrostheimPlugin.Log?.LogWarning($"[ConfigSyncManager] Rejected attempt to save non-.cfg file '{safeName}'.");
+                return new OtherModConfigDetailDto { fileName = safeName };
+            }
+
             string filePath = Path.Combine(configDir, safeName);
+            if (!File.Exists(filePath))
+            {
+                BifrostheimPlugin.Log?.LogWarning($"[ConfigSyncManager] Rejected attempt to save non-existent file '{safeName}'.");
+                return new OtherModConfigDetailDto { fileName = safeName };
+            }
 
             if (req.saveRaw && !string.IsNullOrEmpty(req.rawContent))
             {
@@ -1653,6 +1666,13 @@ namespace Bifrostheim.Helpers
         {
             string configDir = GetConfigDirectory();
             string safeName = Path.GetFileName(fileName);
+
+            if (!safeName.EndsWith(".cfg", StringComparison.OrdinalIgnoreCase))
+            {
+                BifrostheimPlugin.Log?.LogWarning($"[ConfigSyncManager] Rejected attempt to reset non-.cfg file '{safeName}'.");
+                return new OtherModConfigDetailDto { fileName = safeName };
+            }
+
             string filePath = Path.Combine(configDir, safeName);
 
             if (!File.Exists(filePath))

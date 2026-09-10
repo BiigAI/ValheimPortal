@@ -40,8 +40,11 @@ namespace Bifrostheim.Helpers
             string text = eventArgs.Data.ToString() ?? string.Empty;
             if (string.IsNullOrWhiteSpace(text)) return;
 
-            // Skip internal WebPortalServer connection lines to prevent recursive spam
-            if (source.Equals("Bifrostheim", StringComparison.OrdinalIgnoreCase) && text.Contains("[WebPortalServer]"))
+            // Skip internal WebPortalServer and WebApiRouter lines to prevent recursive spam
+            if (source.Equals(BifrostheimPlugin.PluginName, StringComparison.OrdinalIgnoreCase) ||
+                source.Equals("Bifrostheim", StringComparison.OrdinalIgnoreCase) ||
+                text.Contains("[WebPortalServer]") ||
+                text.Contains("[WebApiRouter]"))
             {
                 return;
             }
