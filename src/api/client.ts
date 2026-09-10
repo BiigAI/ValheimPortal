@@ -348,4 +348,40 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ fileName }),
   }),
+
+  // Discord Webhook
+  getDiscordConfig: () => request<DiscordConfig>('/api/discord/config'),
+  saveDiscordConfig: (config: Partial<DiscordConfig>) => request<{ success: boolean; config: DiscordConfig }>('/api/discord/config', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  }),
+  testDiscordWebhook: (eventType: string, webhookUrl?: string) => request<DiscordTestResult>('/api/discord/test', {
+    method: 'POST',
+    body: JSON.stringify({ eventType, webhookUrl }),
+  }),
 };
+
+export interface DiscordConfig {
+  enabled: boolean;
+  webhookUrl: string;
+  overrideChatWebhookUrl: string;
+  overrideAdminWebhookUrl: string;
+  botUsername: string;
+  botAvatarUrl: string;
+  useRichEmbeds: boolean;
+  notifyPlayerJoin: boolean;
+  notifyPlayerLeave: boolean;
+  notifyPlayerDeath: boolean;
+  notifyServerLifecycle: boolean;
+  notifyWorldEvents: boolean;
+  notifyBossMilestones: boolean;
+  notifyAdminActions: boolean;
+  notifyChatShouts: boolean;
+}
+
+export interface DiscordTestResult {
+  success: boolean;
+  message: string;
+  eventType: string;
+}
+

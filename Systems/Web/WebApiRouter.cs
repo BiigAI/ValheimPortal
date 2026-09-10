@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -10,12 +11,14 @@ using System.Text;
 using System.Threading.Tasks;
 using BepInEx.Bootstrap;
 using Bifrostheim.Helpers;
+using Bifrostheim.Systems.Discord;
 using UnityEngine;
 
 namespace Bifrostheim.Systems.Web
 {
     public static class WebApiRouter
     {
+        private static readonly Process _currentProcess = Process.GetCurrentProcess();
         private static readonly DateTime StartTime = DateTime.UtcNow;
         private static readonly List<ConsoleLogEntry> LogsBuffer = new List<ConsoleLogEntry>();
         private static readonly object LogLock = new object();
@@ -23,6 +26,10 @@ namespace Bifrostheim.Systems.Web
         // In-memory rate limiting for brute-force prevention only. Never stored to disk, never transmitted.
         private static readonly ConcurrentDictionary<string, (int attempts, DateTime lockoutUntil)> _loginRateLimits =
             new ConcurrentDictionary<string, (int attempts, DateTime lockoutUntil)>(StringComparer.OrdinalIgnoreCase);
+
+        // Ephemeral session tokens with sliding expiration. Never stored to disk, invalidated on restart.
+        private static readonly ConcurrentDictionary<string, DateTime> _activeSessions =
+            new ConcurrentDictionary<string, DateTime>(StringComparer.Ordinal);
 
         private static ScheduledRestartState _scheduledRestart = new ScheduledRestartState();
         private static DailyRestartState _dailyRestart = new DailyRestartState();
@@ -253,6 +260,26 @@ namespace Bifrostheim.Systems.Web
                     return;
                 }
 
+                // ── Discord Webhook Endpoints ──
+                if (path.Equals("/api/discord/config", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (method == "GET")
+                    {
+                        await HandleGetDiscordConfig(response);
+                    }
+                    else if (method == "POST")
+                    {
+                        await HandleSaveDiscordConfig(request, response, clientIp);
+                    }
+                    return;
+                }
+
+                if (path.Equals("/api/discord/test", StringComparison.OrdinalIgnoreCase) && method == "POST")
+                {
+                    await HandleTestDiscordWebhook(request, response, clientIp);
+                    return;
+                }
+
                 // ── CharactersVault Endpoints ──
                 if (path.Equals("/api/modules/charactervault/bindings", StringComparison.OrdinalIgnoreCase) && method == "GET")
                 {
@@ -413,28 +440,43 @@ namespace Bifrostheim.Systems.Web
                 return true;
             }
 
-            // Check X-Admin-Password header
+            // Check X-Admin-Password header (for CLI/scripts)
             string? providedPassword = request.Headers["X-Admin-Password"];
             if (!string.IsNullOrEmpty(providedPassword) && string.Equals(providedPassword, expectedPassword, StringComparison.Ordinal))
             {
                 return true;
             }
 
-            // Check Authorization header (Bearer or direct token)
+            // Check Authorization header (Bearer session token or legacy direct password)
             string? authHeader = request.Headers["Authorization"];
             if (!string.IsNullOrEmpty(authHeader))
             {
-                if (authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                string token = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                    ? authHeader.Substring(7).Trim()
+                    : authHeader.Trim();
+
+                if (!string.IsNullOrEmpty(token))
                 {
-                    string token = authHeader.Substring(7).Trim();
+                    // Check active ephemeral session
+                    if (_activeSessions.TryGetValue(token, out var expiry))
+                    {
+                        if (DateTime.UtcNow < expiry)
+                        {
+                            // Slide expiration (12 hours)
+                            _activeSessions[token] = DateTime.UtcNow.AddHours(12);
+                            return true;
+                        }
+                        else
+                        {
+                            _activeSessions.TryRemove(token, out _);
+                        }
+                    }
+
+                    // Backward-compatible fallback for direct API password auth
                     if (string.Equals(token, expectedPassword, StringComparison.Ordinal))
                     {
                         return true;
                     }
-                }
-                else if (string.Equals(authHeader.Trim(), expectedPassword, StringComparison.Ordinal))
-                {
-                    return true;
                 }
             }
 
@@ -484,7 +526,9 @@ namespace Bifrostheim.Systems.Web
                 (string.Equals(expectedPassword, "none", StringComparison.OrdinalIgnoreCase) ||
                  string.Equals(expectedPassword, "open", StringComparison.OrdinalIgnoreCase)))
             {
-                await SendJsonAsync(response, 200, new { success = true, token = providedPassword, message = "Authentication successful (open access)." });
+                string openToken = Guid.NewGuid().ToString("N");
+                _activeSessions[openToken] = DateTime.UtcNow.AddHours(12);
+                await SendJsonAsync(response, 200, new { success = true, token = openToken, message = "Authentication successful (open access)." });
                 return;
             }
 
@@ -493,8 +537,10 @@ namespace Bifrostheim.Systems.Web
                 string.Equals(providedPassword, expectedPassword, StringComparison.Ordinal))
             {
                 _loginRateLimits.TryRemove(clientIp, out _);
+                string sessionToken = Guid.NewGuid().ToString("N");
+                _activeSessions[sessionToken] = DateTime.UtcNow.AddHours(12);
                 AddLog("info", "AUTH", $"Admin login successful from {clientIp}.");
-                await SendJsonAsync(response, 200, new { success = true, token = providedPassword, message = "Authentication successful." });
+                await SendJsonAsync(response, 200, new { success = true, token = sessionToken, message = "Authentication successful." });
             }
             else
             {
@@ -575,7 +621,17 @@ namespace Bifrostheim.Systems.Web
                 }
             });
 
-            long memoryMb = GC.GetTotalMemory(false) / (1024 * 1024);
+            long memoryMb;
+            try
+            {
+                _currentProcess.Refresh();
+                memoryMb = _currentProcess.WorkingSet64 / (1024 * 1024);
+            }
+            catch
+            {
+                // Fallback to Mono GC heap if OS process memory query fails or is sandboxed
+                memoryMb = GC.GetTotalMemory(false) / (1024 * 1024);
+            }
 
             var telemetry = new ServerTelemetryDto
             {
@@ -665,6 +721,7 @@ namespace Bifrostheim.Systems.Web
             if (kicked)
             {
                 AddLog("warn", "KICK", $"Kicked player '{name}'");
+                DiscordWebhookDispatcher.OnAdminAction("Kick", name, "Admin", "");
                 await SendJsonAsync(response, 200, new { success = true, message = $"Kicked player '{name}'" });
             }
             else
@@ -690,23 +747,42 @@ namespace Bifrostheim.Systems.Web
             {
                 if (ZNet.instance != null)
                 {
-                    ZNet.instance.Ban(name);
-
-                    // Immediately disconnect active connection if online
                     var peers = ZNetHelper.GetPeers();
+                    ZNetPeer? targetPeer = null;
                     foreach (var peer in peers)
                     {
                         if (peer != null && (string.Equals(peer.m_playerName, name, StringComparison.OrdinalIgnoreCase) ||
                                              string.Equals(ZNetHelper.GetPlayerId(peer), name, StringComparison.OrdinalIgnoreCase)))
                         {
-                            ZNet.instance.Disconnect(peer);
+                            targetPeer = peer;
                             break;
                         }
+                    }
+
+                    string networkId = targetPeer != null ? ZNetHelper.GetPlayerId(targetPeer) : string.Empty;
+
+                    // Always ban network/Steam ID if available to close character-rename evasion
+                    if (!string.IsNullOrWhiteSpace(networkId))
+                    {
+                        ZNet.instance.Ban(networkId);
+                    }
+
+                    // Also ban character name if distinct
+                    if (!string.Equals(name, networkId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        ZNet.instance.Ban(name);
+                    }
+
+                    // Immediately disconnect active connection if online
+                    if (targetPeer != null)
+                    {
+                        ZNet.instance.Disconnect(targetPeer);
                     }
                 }
             });
 
             AddLog("warn", "BAN", $"Banned player '{name}' (Reason: {reason})");
+            DiscordWebhookDispatcher.OnAdminAction("Ban", name, "Admin", reason);
             await SendJsonAsync(response, 200, new { success = true, message = $"Banned player '{name}'" });
         }
 
@@ -1026,6 +1102,94 @@ namespace Bifrostheim.Systems.Web
             await SendJsonAsync(response, 200, new { success = true, lifecycleConfig = saved });
         }
 
+        private static async Task HandleGetDiscordConfig(HttpListenerResponse response)
+        {
+            var config = new DiscordConfigDto
+            {
+                enabled = BifrostheimPlugin.DiscordEnabled?.Value ?? false,
+                webhookUrl = BifrostheimPlugin.DiscordWebhookUrl?.Value ?? "",
+                overrideChatWebhookUrl = BifrostheimPlugin.DiscordOverrideChatWebhookUrl?.Value ?? "",
+                overrideAdminWebhookUrl = BifrostheimPlugin.DiscordOverrideAdminWebhookUrl?.Value ?? "",
+                botUsername = BifrostheimPlugin.DiscordBotUsername?.Value ?? "Bifrostheim Herald",
+                botAvatarUrl = BifrostheimPlugin.DiscordBotAvatarUrl?.Value ?? "",
+                useRichEmbeds = BifrostheimPlugin.DiscordUseRichEmbeds?.Value ?? true,
+                notifyPlayerJoin = BifrostheimPlugin.DiscordNotifyPlayerJoin?.Value ?? true,
+                notifyPlayerLeave = BifrostheimPlugin.DiscordNotifyPlayerLeave?.Value ?? true,
+                notifyPlayerDeath = BifrostheimPlugin.DiscordNotifyPlayerDeath?.Value ?? true,
+                notifyServerLifecycle = BifrostheimPlugin.DiscordNotifyServerLifecycle?.Value ?? true,
+                notifyWorldEvents = BifrostheimPlugin.DiscordNotifyWorldEvents?.Value ?? true,
+                notifyBossMilestones = BifrostheimPlugin.DiscordNotifyBossMilestones?.Value ?? true,
+                notifyAdminActions = BifrostheimPlugin.DiscordNotifyAdminActions?.Value ?? true,
+                notifyChatShouts = BifrostheimPlugin.DiscordNotifyChatShouts?.Value ?? false
+            };
+            await SendJsonAsync(response, 200, config);
+        }
+
+        private static async Task HandleSaveDiscordConfig(HttpListenerRequest request, HttpListenerResponse response, string clientIp)
+        {
+            string body = await ReadBodyAsync(request);
+            var req = SimpleJson.DeserializeObject<DiscordConfigDto>(body);
+            if (req != null)
+            {
+                if (BifrostheimPlugin.DiscordEnabled != null) BifrostheimPlugin.DiscordEnabled.Value = req.enabled;
+                if (BifrostheimPlugin.DiscordWebhookUrl != null) BifrostheimPlugin.DiscordWebhookUrl.Value = req.webhookUrl?.Trim() ?? "";
+                if (BifrostheimPlugin.DiscordOverrideChatWebhookUrl != null) BifrostheimPlugin.DiscordOverrideChatWebhookUrl.Value = req.overrideChatWebhookUrl?.Trim() ?? "";
+                if (BifrostheimPlugin.DiscordOverrideAdminWebhookUrl != null) BifrostheimPlugin.DiscordOverrideAdminWebhookUrl.Value = req.overrideAdminWebhookUrl?.Trim() ?? "";
+                if (BifrostheimPlugin.DiscordBotUsername != null) BifrostheimPlugin.DiscordBotUsername.Value = string.IsNullOrWhiteSpace(req.botUsername) ? "Bifrostheim Herald" : req.botUsername.Trim();
+                if (BifrostheimPlugin.DiscordBotAvatarUrl != null) BifrostheimPlugin.DiscordBotAvatarUrl.Value = req.botAvatarUrl?.Trim() ?? "";
+                if (BifrostheimPlugin.DiscordUseRichEmbeds != null) BifrostheimPlugin.DiscordUseRichEmbeds.Value = req.useRichEmbeds;
+                if (BifrostheimPlugin.DiscordNotifyPlayerJoin != null) BifrostheimPlugin.DiscordNotifyPlayerJoin.Value = req.notifyPlayerJoin;
+                if (BifrostheimPlugin.DiscordNotifyPlayerLeave != null) BifrostheimPlugin.DiscordNotifyPlayerLeave.Value = req.notifyPlayerLeave;
+                if (BifrostheimPlugin.DiscordNotifyPlayerDeath != null) BifrostheimPlugin.DiscordNotifyPlayerDeath.Value = req.notifyPlayerDeath;
+                if (BifrostheimPlugin.DiscordNotifyServerLifecycle != null) BifrostheimPlugin.DiscordNotifyServerLifecycle.Value = req.notifyServerLifecycle;
+                if (BifrostheimPlugin.DiscordNotifyWorldEvents != null) BifrostheimPlugin.DiscordNotifyWorldEvents.Value = req.notifyWorldEvents;
+                if (BifrostheimPlugin.DiscordNotifyBossMilestones != null) BifrostheimPlugin.DiscordNotifyBossMilestones.Value = req.notifyBossMilestones;
+                if (BifrostheimPlugin.DiscordNotifyAdminActions != null) BifrostheimPlugin.DiscordNotifyAdminActions.Value = req.notifyAdminActions;
+                if (BifrostheimPlugin.DiscordNotifyChatShouts != null) BifrostheimPlugin.DiscordNotifyChatShouts.Value = req.notifyChatShouts;
+
+                try
+                {
+                    BifrostheimPlugin.Instance?.Config?.Save();
+                }
+                catch { }
+
+                AddLog("info", "DISCORD", "Updated Discord webhook configuration (Saved to disk).");
+            }
+
+            var saved = new DiscordConfigDto
+            {
+                enabled = BifrostheimPlugin.DiscordEnabled?.Value ?? false,
+                webhookUrl = BifrostheimPlugin.DiscordWebhookUrl?.Value ?? "",
+                overrideChatWebhookUrl = BifrostheimPlugin.DiscordOverrideChatWebhookUrl?.Value ?? "",
+                overrideAdminWebhookUrl = BifrostheimPlugin.DiscordOverrideAdminWebhookUrl?.Value ?? "",
+                botUsername = BifrostheimPlugin.DiscordBotUsername?.Value ?? "Bifrostheim Herald",
+                botAvatarUrl = BifrostheimPlugin.DiscordBotAvatarUrl?.Value ?? "",
+                useRichEmbeds = BifrostheimPlugin.DiscordUseRichEmbeds?.Value ?? true,
+                notifyPlayerJoin = BifrostheimPlugin.DiscordNotifyPlayerJoin?.Value ?? true,
+                notifyPlayerLeave = BifrostheimPlugin.DiscordNotifyPlayerLeave?.Value ?? true,
+                notifyPlayerDeath = BifrostheimPlugin.DiscordNotifyPlayerDeath?.Value ?? true,
+                notifyServerLifecycle = BifrostheimPlugin.DiscordNotifyServerLifecycle?.Value ?? true,
+                notifyWorldEvents = BifrostheimPlugin.DiscordNotifyWorldEvents?.Value ?? true,
+                notifyBossMilestones = BifrostheimPlugin.DiscordNotifyBossMilestones?.Value ?? true,
+                notifyAdminActions = BifrostheimPlugin.DiscordNotifyAdminActions?.Value ?? true,
+                notifyChatShouts = BifrostheimPlugin.DiscordNotifyChatShouts?.Value ?? false
+            };
+
+            await SendJsonAsync(response, 200, new { success = true, config = saved });
+        }
+
+        private static async Task HandleTestDiscordWebhook(HttpListenerRequest request, HttpListenerResponse response, string clientIp)
+        {
+            string body = await ReadBodyAsync(request);
+            var req = SimpleJson.DeserializeObject<DiscordTestRequestDto>(body);
+            string eventType = !string.IsNullOrWhiteSpace(req?.eventType) ? req!.eventType!.Trim() : "server_online";
+            string? explicitUrl = !string.IsNullOrWhiteSpace(req?.webhookUrl) ? req!.webhookUrl!.Trim() : null;
+
+            var (success, message) = await DiscordWebhookDispatcher.SendImmediateTestAsync(eventType, explicitUrl);
+            AddLog(success ? "info" : "warn", "DISCORD", $"Test webhook '{eventType}': {message}");
+            await SendJsonAsync(response, success ? 200 : 400, new { success, message, eventType });
+        }
+
         public static void TickLifecycle()
         {
             if ((DateTime.UtcNow - _lastLifecycleTick).TotalSeconds < 1.0)
@@ -1051,6 +1215,11 @@ namespace Bifrostheim.Systems.Web
                             string shout = $"⚠️ SERVER RESTART in {timeText}! Reason: {_scheduledRestart.reason}. Please find shelter.";
                             ZNetHelper.BroadcastServerMessage(shout);
                             AddLog("warn", "RESTART", $"Broadcast in-game warning: {timeText} remaining.");
+
+                            if (mark == 600 || mark == 300 || mark == 60)
+                            {
+                                DiscordWebhookDispatcher.OnServerLifecycle("⏳ Scheduled Server Restart Warning", $"Server restarting in {timeText}! Reason: {_scheduledRestart.reason}. Find shelter!", DiscordWebhookDispatcher.ColorOrange, true);
+                            }
                         }
                     }
 
@@ -1098,6 +1267,7 @@ namespace Bifrostheim.Systems.Web
         {
             AddLog("warn", "RESTART", "Executing server restart sequence: saving world and terminating process...");
             ZNetHelper.BroadcastServerMessage("⚠️ [SERVER RESTART] Server is restarting NOW. World saving...");
+            DiscordWebhookDispatcher.OnServerLifecycle("🛑 Server Restarting Now", "Server restart initiated. The world is being saved and the server is restarting.", DiscordWebhookDispatcher.ColorRed);
 
             Task.Run(async () =>
             {
@@ -1458,7 +1628,7 @@ namespace Bifrostheim.Systems.Web
 
         private static async Task SendJsonAsync(HttpListenerResponse response, int statusCode, object data)
         {
-            string json = SimpleJson.SerializeObject(data, prettyPrint: true);
+            string json = SimpleJson.SerializeObject(data, prettyPrint: false);
             byte[] bytes = Encoding.UTF8.GetBytes(json);
 
             response.StatusCode = statusCode;
@@ -1670,5 +1840,31 @@ namespace Bifrostheim.Systems.Web
     {
         public string fileName { get; set; } = string.Empty;
     }
+
+    public class DiscordConfigDto
+    {
+        public bool enabled { get; set; }
+        public string webhookUrl { get; set; } = string.Empty;
+        public string overrideChatWebhookUrl { get; set; } = string.Empty;
+        public string overrideAdminWebhookUrl { get; set; } = string.Empty;
+        public string botUsername { get; set; } = "Bifrostheim Herald";
+        public string botAvatarUrl { get; set; } = string.Empty;
+        public bool useRichEmbeds { get; set; } = true;
+        public bool notifyPlayerJoin { get; set; } = true;
+        public bool notifyPlayerLeave { get; set; } = true;
+        public bool notifyPlayerDeath { get; set; } = true;
+        public bool notifyServerLifecycle { get; set; } = true;
+        public bool notifyWorldEvents { get; set; } = true;
+        public bool notifyBossMilestones { get; set; } = true;
+        public bool notifyAdminActions { get; set; } = true;
+        public bool notifyChatShouts { get; set; } = false;
+    }
+
+    public class DiscordTestRequestDto
+    {
+        public string? eventType { get; set; }
+        public string? webhookUrl { get; set; }
+    }
 }
+
 

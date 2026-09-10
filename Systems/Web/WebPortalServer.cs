@@ -228,15 +228,21 @@ namespace Bifrostheim.Systems.Web
 
         private static string GetClientIp(HttpListenerRequest request)
         {
-            string? forwarded = request.Headers["X-Forwarded-For"];
-            if (!string.IsNullOrWhiteSpace(forwarded))
+            var remoteAddress = request.RemoteEndPoint?.Address;
+
+            // Only trust X-Forwarded-For if the immediate connection is from a trusted local reverse proxy (e.g. Nginx, Caddy on loopback)
+            if (remoteAddress != null && IPAddress.IsLoopback(remoteAddress))
             {
-                string[] parts = forwarded.Split(',');
-                if (parts.Length > 0 && !string.IsNullOrWhiteSpace(parts[0]))
-                    return parts[0].Trim();
+                string? forwarded = request.Headers["X-Forwarded-For"];
+                if (!string.IsNullOrWhiteSpace(forwarded))
+                {
+                    string[] parts = forwarded.Split(',');
+                    if (parts.Length > 0 && !string.IsNullOrWhiteSpace(parts[0]))
+                        return parts[0].Trim();
+                }
             }
 
-            return request.RemoteEndPoint?.Address?.ToString() ?? "127.0.0.1";
+            return remoteAddress?.ToString() ?? "127.0.0.1";
         }
     }
 }

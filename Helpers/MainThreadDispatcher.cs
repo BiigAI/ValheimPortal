@@ -1,28 +1,21 @@
 using System;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
-using UnityEngine;
 
 namespace Bifrostheim.Helpers
 {
-    public class MainThreadDispatcher : MonoBehaviour
+    /// <summary>
+    /// Thread-safe dispatcher that enqueues work to be executed on Unity's main engine thread.
+    /// Pumped directly from BifrostheimPlugin.Update() with a per-frame execution cap to prevent lag spikes.
+    /// </summary>
+    public static class MainThreadDispatcher
     {
         private static readonly ConcurrentQueue<Action> ExecutionQueue = new ConcurrentQueue<Action>();
-        private static MainThreadDispatcher? _instance;
 
-        public static void Initialize()
+        public static void PumpQueue(int maxActionsPerFrame = 25)
         {
-            if (_instance == null)
-            {
-                var go = new GameObject("Bifrostheim_MainThreadDispatcher");
-                DontDestroyOnLoad(go);
-                _instance = go.AddComponent<MainThreadDispatcher>();
-            }
-        }
-
-        private void Update()
-        {
-            while (ExecutionQueue.TryDequeue(out var action))
+            int executed = 0;
+            while (executed < maxActionsPerFrame && ExecutionQueue.TryDequeue(out var action))
             {
                 try
                 {
@@ -30,8 +23,9 @@ namespace Bifrostheim.Helpers
                 }
                 catch (Exception ex)
                 {
-                    BifrostheimPlugin.Log.LogError($"[MainThreadDispatcher] Error executing action: {ex}");
+                    BifrostheimPlugin.Log?.LogError($"[MainThreadDispatcher] Error executing action: {ex}");
                 }
+                executed++;
             }
         }
 

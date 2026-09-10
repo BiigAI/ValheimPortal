@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiHome, FiUsers, FiSliders, FiClock, FiShield, FiLogOut, FiActivity, FiServer, FiFeather, FiCompass, FiPackage, FiExternalLink } from 'react-icons/fi';
+import { FiHome, FiUsers, FiSliders, FiClock, FiLogOut, FiActivity, FiServer, FiFeather, FiCompass, FiPackage, FiExternalLink, FiSettings } from 'react-icons/fi';
 import DashboardTab from './tabs/DashboardTab';
 import CharactersVaultTab from './tabs/CharactersVaultTab';
 import ValgrindTab from './tabs/ValgrindTab';
@@ -11,6 +11,7 @@ import OtherModsTab from './tabs/OtherModsTab';
 import PendingChangesBanner from './components/PendingChangesBanner';
 import LoginScreen from './components/LoginScreen';
 import ReconnectingOverlay from './components/ReconnectingOverlay';
+import SettingsModal from './components/SettingsModal';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { api, type PendingConfigChange, type ScheduledRestartInfo } from './api/client';
@@ -34,6 +35,7 @@ function MainLayout({ onLogout }: { onLogout: () => void }) {
   const [scheduledRestart, setScheduledRestart] = useState<ScheduledRestartInfo | null>(null);
   const [tickRate, setTickRate] = useState('—');
   const [isDisconnected, setIsDisconnected] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const failCountRef = useRef(0);
   const { showToast } = useToast();
 
@@ -186,28 +188,34 @@ function MainLayout({ onLogout }: { onLogout: () => void }) {
           })}
         </nav>
 
-        {/* Server Status footer */}
-        <div className="p-4 m-4 rounded-xl bg-gray-950/60 border border-gray-800/80">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-gray-400 flex items-center space-x-1.5 font-medium">
-              <FiShield className="text-emerald-400" />
-              <span>BepInEx Bridge</span>
-            </span>
-            <span className="text-[10px] font-mono bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20">
-              Active
-            </span>
-          </div>
-          <div className="text-xs text-gray-400 font-mono">Port: 8080 (HTTP)</div>
-        </div>
+        {/* Streamlined Sidebar Footer: Settings Cog & Disconnect */}
+        <div className="p-3.5 border-t border-gray-800/60 bg-gray-950/50">
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="flex-1 flex items-center justify-center space-x-2 px-3.5 py-2.5 text-xs font-semibold text-gray-300 hover:text-white bg-gray-900/80 hover:bg-gray-800 border border-gray-800/90 hover:border-gray-700 rounded-xl transition-all shadow-sm group"
+              title="Open Server & Webhook Settings"
+            >
+              <FiSettings size={15} className="text-gray-400 group-hover:text-orange-400 group-hover:rotate-45 transition-all duration-300" />
+              <span>Settings</span>
+            </button>
 
-        <div className="p-4 border-t border-gray-800/50">
-          <button
-            onClick={handleDisconnect}
-            className="w-full flex items-center justify-center space-x-2 px-4 py-2.5 text-sm text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all border border-transparent hover:border-red-500/20"
-          >
-            <FiLogOut size={16} />
-            <span>Disconnect Session</span>
-          </button>
+            <button
+              onClick={handleDisconnect}
+              className="p-2.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 border border-gray-800/80 hover:border-red-500/20 rounded-xl transition-all"
+              title="Disconnect Session"
+            >
+              <FiLogOut size={16} />
+            </button>
+          </div>
+
+          <div className="mt-2.5 px-1 flex items-center justify-between text-[11px] text-gray-500 font-mono">
+            <span className="flex items-center space-x-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Bridge Active</span>
+            </span>
+            <span>Port 8080</span>
+          </div>
         </div>
       </motion.aside>
 
@@ -317,7 +325,7 @@ function MainLayout({ onLogout }: { onLogout: () => void }) {
                   transition={{ duration: 0.18, ease: "easeOut" }}
                   className="w-full"
                 >
-                  <Component onSaved={fetchRestartStatus} />
+                  <Component onSaved={fetchRestartStatus} onOpenSettings={() => setIsSettingsOpen(true)} />
                 </motion.div>
               );
             })}
@@ -329,6 +337,13 @@ function MainLayout({ onLogout }: { onLogout: () => void }) {
       <AnimatePresence>
         {isDisconnected && <ReconnectingOverlay />}
       </AnimatePresence>
+
+      {/* Bigfrost Server & Discord Webhook Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onSaved={fetchRestartStatus}
+      />
     </div>
   );
 }
