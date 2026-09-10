@@ -52,20 +52,70 @@ namespace Bifrostheim.Systems.Discord
             }
         }
 
-        public static void Shutdown()
+        public static void Shutdown(bool drainFirst = true)
         {
+            Task? taskToWait;
+            CancellationTokenSource? ctsToCancel;
+
             lock (_lock)
             {
-                try
-                {
-                    _cts?.Cancel();
-                    _cts?.Dispose();
-                    _cts = null;
-                    _workerTask = null;
-                    BifrostheimPlugin.Log?.LogInfo("[Discord] Webhook dispatcher stopped.");
-                }
-                catch { }
+                taskToWait = _workerTask;
+                ctsToCancel = _cts;
             }
+
+            if (taskToWait == null) return;
+
+            try
+            {
+                // If draining, allow worker up to 4 seconds to send pending alerts (e.g. server shutdown notification)
+                if (drainFirst && !_queue.IsEmpty)
+                {
+                    int waitMs = 0;
+                    while (!_queue.IsEmpty && waitMs < 4000)
+                    {
+                        System.Threading.Thread.Sleep(200);
+                        waitMs += 200;
+                    }
+                }
+
+                ctsToCancel?.Cancel();
+
+                // Wait up to 3 seconds for worker loop to complete cleanly
+                taskToWait.Wait(TimeSpan.FromSeconds(3));
+            }
+            catch (Exception ex)
+            {
+                BifrostheimPlugin.Log?.LogWarning($"[Discord] Webhook dispatcher shutdown wait: {ex.Message}");
+            }
+            finally
+            {
+                lock (_lock)
+                {
+                    ctsToCancel?.Dispose();
+                    if (ReferenceEquals(_cts, ctsToCancel)) _cts = null;
+                    if (ReferenceEquals(_workerTask, taskToWait)) _workerTask = null;
+                }
+                BifrostheimPlugin.Log?.LogInfo("[Discord] Webhook dispatcher stopped.");
+            }
+        }
+
+        public static bool IsValidDiscordWebhookUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return false;
+            string trimmed = url!.Trim();
+            if (!Uri.TryCreate(trimmed, UriKind.Absolute, out Uri? uri) || uri == null) return false;
+            if (uri.Scheme != Uri.UriSchemeHttps) return false;
+
+            string host = uri.Host.ToLowerInvariant();
+            bool isDiscordHost = host == "discord.com" ||
+                                 host == "discordapp.com" ||
+                                 host == "canary.discord.com" ||
+                                 host == "ptb.discord.com";
+
+            if (!isDiscordHost) return false;
+
+            string path = uri.AbsolutePath;
+            return path.StartsWith("/api/webhooks/", StringComparison.OrdinalIgnoreCase) && path.Length > 15;
         }
 
         public static string ResolveWebhookUrl(DiscordChannelTarget target, string? explicitUrl = null)
@@ -87,7 +137,7 @@ namespace Bifrostheim.Systems.Discord
 
         public static void EnqueuePayload(string payloadJson, DiscordChannelTarget target = DiscordChannelTarget.Default, string? explicitUrl = null)
         {
-            if (!BifrostheimPlugin.DiscordEnabled.Value && string.IsNullOrWhiteSpace(explicitUrl))
+            if (!(BifrostheimPlugin.DiscordEnabled?.Value ?? false) && string.IsNullOrWhiteSpace(explicitUrl))
             {
                 return;
             }
@@ -110,12 +160,17 @@ namespace Bifrostheim.Systems.Discord
                     if (_queue.TryDequeue(out var item))
                     {
                         string targetUrl = ResolveWebhookUrl(item.Target, item.ExplicitUrl);
-                        if (string.IsNullOrWhiteSpace(targetUrl))
+                        if (string.IsNullOrWhiteSpace(targetUrl) || !IsValidDiscordWebhookUrl(targetUrl))
                         {
+                            if (!string.IsNullOrWhiteSpace(targetUrl))
+                            {
+                                BifrostheimPlugin.Log?.LogWarning($"[Discord] Discarding payload for target '{item.Target}': Webhook URL is invalid or unsafe.");
+                            }
                             continue;
                         }
 
                         bool success = false;
+                        bool isTransientError = false;
                         int retryAfterMs = 1000;
 
                         try
@@ -129,6 +184,7 @@ namespace Bifrostheim.Systems.Discord
                             }
                             else if ((int)response.StatusCode == 429)
                             {
+                                isTransientError = true;
                                 // Rate limited by Discord
                                 if (response.Headers.TryGetValues("Retry-After", out var values))
                                 {
@@ -143,18 +199,26 @@ namespace Bifrostheim.Systems.Discord
                                 }
                                 BifrostheimPlugin.Log?.LogWarning($"[Discord] Rate limit reached. Backing off for {retryAfterMs}ms.");
                             }
+                            else if ((int)response.StatusCode >= 500 && (int)response.StatusCode < 600)
+                            {
+                                isTransientError = true;
+                                string errorText = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                                BifrostheimPlugin.Log?.LogWarning($"[Discord] Discord gateway error ({response.StatusCode}): {errorText}");
+                            }
                             else
                             {
+                                // Permanent client error (400, 401, 404) - do not retry
                                 string errorText = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                                BifrostheimPlugin.Log?.LogWarning($"[Discord] Webhook dispatch failed: {response.StatusCode} - {errorText}");
+                                BifrostheimPlugin.Log?.LogWarning($"[Discord] Webhook dispatch permanent failure ({response.StatusCode}): {errorText}");
                             }
                         }
                         catch (Exception ex)
                         {
+                            isTransientError = true;
                             BifrostheimPlugin.Log?.LogWarning($"[Discord] Webhook post exception: {ex.Message}");
                         }
 
-                        if (!success && item.RetryCount < 3)
+                        if (!success && isTransientError && item.RetryCount < 3)
                         {
                             item.RetryCount++;
                             await Task.Delay(retryAfterMs, ct).ConfigureAwait(false);
@@ -192,6 +256,11 @@ namespace Bifrostheim.Systems.Discord
                 return (false, "No Discord Webhook URL provided or configured.");
             }
 
+            if (!IsValidDiscordWebhookUrl(url))
+            {
+                return (false, "Invalid Discord Webhook URL. URL must use HTTPS and point to an official Discord webhook endpoint (e.g. https://discord.com/api/webhooks/...).");
+            }
+
             string payloadJson = BuildMockPayload(eventType);
 
             try
@@ -215,12 +284,12 @@ namespace Bifrostheim.Systems.Discord
 
         public static void OnPlayerJoin(string playerName, int onlineCount, int maxSlots)
         {
-            if (!BifrostheimPlugin.DiscordNotifyPlayerJoin.Value) return;
+            if (!(BifrostheimPlugin.DiscordNotifyPlayerJoin?.Value ?? false)) return;
 
             string botName = GetBotName();
             string avatar = GetBotAvatar();
 
-            if (BifrostheimPlugin.DiscordUseRichEmbeds.Value)
+            if (BifrostheimPlugin.DiscordUseRichEmbeds?.Value ?? true)
             {
                 var payload = new Dictionary<string, object?>
                 {
@@ -254,13 +323,13 @@ namespace Bifrostheim.Systems.Discord
 
         public static void OnPlayerLeave(string playerName, TimeSpan sessionDuration, int onlineCount, int maxSlots)
         {
-            if (!BifrostheimPlugin.DiscordNotifyPlayerLeave.Value) return;
+            if (!(BifrostheimPlugin.DiscordNotifyPlayerLeave?.Value ?? false)) return;
 
             string botName = GetBotName();
             string avatar = GetBotAvatar();
             string durationStr = FormatDuration(sessionDuration);
 
-            if (BifrostheimPlugin.DiscordUseRichEmbeds.Value)
+            if (BifrostheimPlugin.DiscordUseRichEmbeds?.Value ?? true)
             {
                 var payload = new Dictionary<string, object?>
                 {
@@ -294,7 +363,7 @@ namespace Bifrostheim.Systems.Discord
 
         public static void OnPlayerDeath(string victimName, string biome, string? killerName = null, string? formattedLore = null)
         {
-            if (!BifrostheimPlugin.DiscordNotifyPlayerDeath.Value) return;
+            if (!(BifrostheimPlugin.DiscordNotifyPlayerDeath?.Value ?? false)) return;
 
             string botName = GetBotName();
             string avatar = GetBotAvatar();
@@ -314,7 +383,7 @@ namespace Bifrostheim.Systems.Discord
                 desc = $"**{EscapeMarkdown(victimName)}** met their end in the **{biome}**.";
             }
 
-            if (BifrostheimPlugin.DiscordUseRichEmbeds.Value)
+            if (BifrostheimPlugin.DiscordUseRichEmbeds?.Value ?? true)
             {
                 var payload = new Dictionary<string, object?>
                 {
@@ -348,13 +417,13 @@ namespace Bifrostheim.Systems.Discord
 
         public static void OnPvPKill(string killerName, string victimName, string biome)
         {
-            if (!BifrostheimPlugin.DiscordNotifyPlayerDeath.Value) return;
+            if (!(BifrostheimPlugin.DiscordNotifyPlayerDeath?.Value ?? false)) return;
 
             string botName = GetBotName();
             string avatar = GetBotAvatar();
             string desc = $"**{EscapeMarkdown(killerName)}** vanquished **{EscapeMarkdown(victimName)}** in the **{biome}**!";
 
-            if (BifrostheimPlugin.DiscordUseRichEmbeds.Value)
+            if (BifrostheimPlugin.DiscordUseRichEmbeds?.Value ?? true)
             {
                 var payload = new Dictionary<string, object?>
                 {
@@ -388,12 +457,12 @@ namespace Bifrostheim.Systems.Discord
 
         public static void OnServerLifecycle(string title, string description, int color = ColorGreen, bool isRestartWarning = false)
         {
-            if (!BifrostheimPlugin.DiscordNotifyServerLifecycle.Value) return;
+            if (!(BifrostheimPlugin.DiscordNotifyServerLifecycle?.Value ?? false)) return;
 
             string botName = GetBotName();
             string avatar = GetBotAvatar();
 
-            if (BifrostheimPlugin.DiscordUseRichEmbeds.Value)
+            if (BifrostheimPlugin.DiscordUseRichEmbeds?.Value ?? true)
             {
                 var payload = new Dictionary<string, object?>
                 {
@@ -427,7 +496,7 @@ namespace Bifrostheim.Systems.Discord
 
         public static void OnRaidEvent(string eventName, string announcement, string biome, bool started)
         {
-            if (!BifrostheimPlugin.DiscordNotifyWorldEvents.Value) return;
+            if (!(BifrostheimPlugin.DiscordNotifyWorldEvents?.Value ?? false)) return;
 
             string botName = GetBotName();
             string avatar = GetBotAvatar();
@@ -440,7 +509,7 @@ namespace Bifrostheim.Systems.Discord
                 : (!string.IsNullOrWhiteSpace(biome) ? $"The raid in the **{biome}** has subsided." : "The raid has subsided.");
             int color = started ? ColorOrange : ColorBlue;
 
-            if (BifrostheimPlugin.DiscordUseRichEmbeds.Value)
+            if (BifrostheimPlugin.DiscordUseRichEmbeds?.Value ?? true)
             {
                 var payload = new Dictionary<string, object?>
                 {
@@ -474,7 +543,7 @@ namespace Bifrostheim.Systems.Discord
 
         public static void OnBossEvent(string bossName, string biome, bool defeated)
         {
-            if (!BifrostheimPlugin.DiscordNotifyBossMilestones.Value) return;
+            if (!(BifrostheimPlugin.DiscordNotifyBossMilestones?.Value ?? false)) return;
 
             string botName = GetBotName();
             string avatar = GetBotAvatar();
@@ -484,7 +553,7 @@ namespace Bifrostheim.Systems.Discord
                 ? $"The ancient power **{bossName}** has been vanquished from the realm!"
                 : $"**{bossName}** has answered the call of sacrifice in the **{biome}**!";
 
-            if (BifrostheimPlugin.DiscordUseRichEmbeds.Value)
+            if (BifrostheimPlugin.DiscordUseRichEmbeds?.Value ?? true)
             {
                 var payload = new Dictionary<string, object?>
                 {
@@ -518,7 +587,7 @@ namespace Bifrostheim.Systems.Discord
 
         public static void OnAdminAction(string actionType, string targetName, string adminName, string reason)
         {
-            if (!BifrostheimPlugin.DiscordNotifyAdminActions.Value) return;
+            if (!(BifrostheimPlugin.DiscordNotifyAdminActions?.Value ?? false)) return;
 
             string botName = GetBotName();
             string avatar = GetBotAvatar();
@@ -528,7 +597,7 @@ namespace Bifrostheim.Systems.Discord
                 ? $"**{EscapeMarkdown(targetName)}** was {actionType.ToLower()}ed by **{adminName}**."
                 : $"**{EscapeMarkdown(targetName)}** was {actionType.ToLower()}ed by **{adminName}**.\n**Reason:** {EscapeMarkdown(reason)}";
 
-            if (BifrostheimPlugin.DiscordUseRichEmbeds.Value)
+            if (BifrostheimPlugin.DiscordUseRichEmbeds?.Value ?? true)
             {
                 var payload = new Dictionary<string, object?>
                 {
@@ -562,13 +631,13 @@ namespace Bifrostheim.Systems.Discord
 
         public static void OnChatShout(string playerName, string message)
         {
-            if (!BifrostheimPlugin.DiscordNotifyChatShouts.Value) return;
+            if (!(BifrostheimPlugin.DiscordNotifyChatShouts?.Value ?? false)) return;
             if (string.IsNullOrWhiteSpace(message)) return;
 
             string botName = GetBotName();
             string avatar = GetBotAvatar();
 
-            if (BifrostheimPlugin.DiscordUseRichEmbeds.Value)
+            if (BifrostheimPlugin.DiscordUseRichEmbeds?.Value ?? true)
             {
                 var payload = new Dictionary<string, object?>
                 {

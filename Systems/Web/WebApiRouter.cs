@@ -7,6 +7,8 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using BepInEx.Bootstrap;
@@ -18,9 +20,107 @@ namespace Bifrostheim.Systems.Web
 {
     public static class WebApiRouter
     {
-        private static readonly Process _currentProcess = Process.GetCurrentProcess();
+        private const int MaxRequestBodySizeBytes = 1024 * 1024; // 1 MB limit to prevent DoS
+
+        private static readonly HashSet<string> _blockedConsoleCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "devcommands",
+            "debugmode",
+            "god",
+            "ghost",
+            "dpspath",
+            "resetwind",
+            "killall",
+            "spawn",
+            "fly",
+            "nocost",
+            "raiseskill"
+        };
+
+        [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.NoOptimization)]
+        private static bool ConstantTimeEquals(string? a, string? b)
+        {
+            if (a == null || b == null)
+            {
+                return false;
+            }
+
+            byte[] aBytes = Encoding.UTF8.GetBytes(a);
+            byte[] bBytes = Encoding.UTF8.GetBytes(b);
+
+            // Hash both inputs using SHA256 to normalize length to 32 bytes,
+            // preventing both length-based and byte-by-byte timing leakage.
+            using (var sha = SHA256.Create())
+            {
+                byte[] hashA = sha.ComputeHash(aBytes);
+                byte[] hashB = sha.ComputeHash(bBytes);
+
+                int diff = 0;
+                for (int i = 0; i < hashA.Length; i++)
+                {
+                    diff |= hashA[i] ^ hashB[i];
+                }
+                return diff == 0;
+            }
+        }
+
+        public static bool IsAllowedOrigin(string? origin, HttpListenerRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(origin))
+            {
+                return false;
+            }
+
+            if (!Uri.TryCreate(origin, UriKind.Absolute, out Uri? originUri) || originUri == null)
+            {
+                return false;
+            }
+
+            // Allow loopback / localhost origins (e.g. Vite dev server or local admin access)
+            if (originUri.IsLoopback ||
+                string.Equals(originUri.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(originUri.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(originUri.Host, "::1", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            // Allow origin matching the server's Host header
+            string hostHeader = request.Headers["Host"];
+            if (!string.IsNullOrWhiteSpace(hostHeader))
+            {
+                string expectedHost = hostHeader;
+                int colonIdx = expectedHost.IndexOf(':');
+                int expectedPort = -1;
+                if (colonIdx >= 0)
+                {
+                    int.TryParse(expectedHost.Substring(colonIdx + 1), out expectedPort);
+                    expectedHost = expectedHost.Substring(0, colonIdx);
+                }
+
+                if (string.Equals(originUri.Host, expectedHost, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (expectedPort <= 0 || originUri.Port == expectedPort)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            // Allow origin matching server URL host and port
+            if (request.Url != null && string.Equals(originUri.Host, request.Url.Host, StringComparison.OrdinalIgnoreCase))
+            {
+                if (originUri.Port == request.Url.Port)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private static readonly DateTime StartTime = DateTime.UtcNow;
-        private static readonly List<ConsoleLogEntry> LogsBuffer = new List<ConsoleLogEntry>();
+        private static readonly LinkedList<ConsoleLogEntry> LogsBuffer = new LinkedList<ConsoleLogEntry>();
         private static readonly object LogLock = new object();
 
         // In-memory rate limiting for brute-force prevention only. Never stored to disk, never transmitted.
@@ -35,6 +135,7 @@ namespace Bifrostheim.Systems.Web
         private static DailyRestartState _dailyRestart = new DailyRestartState();
         private static LifecycleConfigState _lifecycleConfig = new LifecycleConfigState();
 
+        private static readonly object _restartLock = new object();
         private static DateTime _lastLifecycleTick = DateTime.MinValue;
         private static readonly HashSet<int> _restartWarningsSent = new HashSet<int>();
         private static string _lastDailyRestartDate = string.Empty;
@@ -48,20 +149,13 @@ namespace Bifrostheim.Systems.Web
         {
             lock (_pendingLock)
             {
-                var existing = _pendingChanges.FirstOrDefault(c => c.module.Equals(module, StringComparison.OrdinalIgnoreCase));
-                if (existing != null)
+                _pendingChanges.RemoveAll(c => c.module.Equals(module, StringComparison.OrdinalIgnoreCase));
+                _pendingChanges.Add(new PendingConfigChange
                 {
-                    existing.timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
-                }
-                else
-                {
-                    _pendingChanges.Add(new PendingConfigChange
-                    {
-                        module = module,
-                        moduleName = moduleName,
-                        timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
-                    });
-                }
+                    module = module,
+                    moduleName = moduleName,
+                    timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
+                });
             }
         }
 
@@ -73,13 +167,14 @@ namespace Bifrostheim.Systems.Web
             }
         }
 
-        private static List<SkaldDeathRecordDto> _skaldChronicle = new List<SkaldDeathRecordDto>();
+        private static readonly List<SkaldDeathRecordDto> _skaldChronicle = new List<SkaldDeathRecordDto>();
+        private static readonly object _skaldLock = new object();
 
         public static void AddLog(string level, string source, string text)
         {
             lock (LogLock)
             {
-                LogsBuffer.Add(new ConsoleLogEntry
+                LogsBuffer.AddLast(new ConsoleLogEntry
                 {
                     time = DateTime.Now.ToString("HH:mm:ss"),
                     source = source,
@@ -87,9 +182,9 @@ namespace Bifrostheim.Systems.Web
                     level = level
                 });
 
-                if (LogsBuffer.Count > 300)
+                while (LogsBuffer.Count > 300)
                 {
-                    LogsBuffer.RemoveAt(0);
+                    LogsBuffer.RemoveFirst();
                 }
             }
         }
@@ -101,7 +196,12 @@ namespace Bifrostheim.Systems.Web
             string method = request.HttpMethod.ToUpperInvariant();
 
             response.ContentType = "application/json; charset=utf-8";
-            response.AddHeader("Access-Control-Allow-Origin", "*");
+            string? origin = request.Headers["Origin"];
+            if (!string.IsNullOrEmpty(origin) && IsAllowedOrigin(origin, request))
+            {
+                response.AddHeader("Access-Control-Allow-Origin", origin);
+                response.AddHeader("Vary", "Origin");
+            }
 
             try
             {
@@ -395,6 +495,11 @@ namespace Bifrostheim.Systems.Web
                 // Fallback for unknown endpoints
                 await SendJsonAsync(response, 404, new { error = $"API endpoint '{path}' not found." });
             }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("maximum allowed size"))
+            {
+                AddLog("warn", "SECURITY", $"Request body size limit exceeded on '{path}' from {clientIp}: {ex.Message}");
+                await SendJsonAsync(response, 413, new { error = ex.Message });
+            }
             catch (Exception ex)
             {
                 BifrostheimPlugin.Log.LogError($"[WebApiRouter] Error handling '{path}': {ex}");
@@ -442,7 +547,7 @@ namespace Bifrostheim.Systems.Web
 
             // Check X-Admin-Password header (for CLI/scripts)
             string? providedPassword = request.Headers["X-Admin-Password"];
-            if (!string.IsNullOrEmpty(providedPassword) && string.Equals(providedPassword, expectedPassword, StringComparison.Ordinal))
+            if (!string.IsNullOrEmpty(providedPassword) && ConstantTimeEquals(providedPassword, expectedPassword))
             {
                 return true;
             }
@@ -473,7 +578,7 @@ namespace Bifrostheim.Systems.Web
                     }
 
                     // Backward-compatible fallback for direct API password auth
-                    if (string.Equals(token, expectedPassword, StringComparison.Ordinal))
+                    if (ConstantTimeEquals(token, expectedPassword))
                     {
                         return true;
                     }
@@ -534,7 +639,7 @@ namespace Bifrostheim.Systems.Web
 
             if (!string.IsNullOrWhiteSpace(expectedPassword) &&
                 !string.IsNullOrWhiteSpace(providedPassword) &&
-                string.Equals(providedPassword, expectedPassword, StringComparison.Ordinal))
+                ConstantTimeEquals(providedPassword, expectedPassword))
             {
                 _loginRateLimits.TryRemove(clientIp, out _);
                 string sessionToken = Guid.NewGuid().ToString("N");
@@ -624,11 +729,14 @@ namespace Bifrostheim.Systems.Web
             long memoryMb;
             try
             {
-                _currentProcess.Refresh();
-                memoryMb = _currentProcess.WorkingSet64 / (1024 * 1024);
+                using (var currentProcess = Process.GetCurrentProcess())
+                {
+                    memoryMb = currentProcess.WorkingSet64 / (1024 * 1024);
+                }
             }
-            catch
+            catch (Exception ex)
             {
+                BifrostheimPlugin.Log?.LogDebug($"[WebApiRouter] Failed to query OS working set, falling back to GC total memory: {ex.Message}");
                 // Fallback to Mono GC heap if OS process memory query fails or is sandboxed
                 memoryMb = GC.GetTotalMemory(false) / (1024 * 1024);
             }
@@ -656,6 +764,7 @@ namespace Bifrostheim.Systems.Web
             {
                 if (ZNet.instance != null)
                 {
+                    int worldDay = ZNetHelper.GetCurrentWorldDay();
                     var peers = ZNetHelper.GetPeers();
                     foreach (var peer in peers)
                     {
@@ -666,7 +775,7 @@ namespace Bifrostheim.Systems.Web
                         var pos = peer.m_refPos;
                         string posStr = $"{pos.x:F0}, {pos.y:F0}, {pos.z:F0}";
 
-                        var pData = ZNetHelper.GetPlayerData(peer);
+                        var pData = ZNetHelper.GetPlayerData(peer, worldDay);
 
                         playerList.Add(new
                         {
@@ -743,6 +852,10 @@ namespace Bifrostheim.Systems.Web
                 return;
             }
 
+            bool banExecuted = false;
+            bool wasOnlinePeer = false;
+            string targetDisplayName = name;
+
             await MainThreadDispatcher.EnqueueAsync(() =>
             {
                 if (ZNet.instance != null)
@@ -765,25 +878,38 @@ namespace Bifrostheim.Systems.Web
                     if (!string.IsNullOrWhiteSpace(networkId))
                     {
                         ZNet.instance.Ban(networkId);
+                        banExecuted = true;
+                        targetDisplayName = $"{name} ({networkId})";
                     }
 
                     // Also ban character name if distinct
                     if (!string.Equals(name, networkId, StringComparison.OrdinalIgnoreCase))
                     {
                         ZNet.instance.Ban(name);
+                        banExecuted = true;
                     }
 
                     // Immediately disconnect active connection if online
                     if (targetPeer != null)
                     {
+                        wasOnlinePeer = true;
                         ZNet.instance.Disconnect(targetPeer);
                     }
                 }
             });
 
-            AddLog("warn", "BAN", $"Banned player '{name}' (Reason: {reason})");
-            DiscordWebhookDispatcher.OnAdminAction("Ban", name, "Admin", reason);
-            await SendJsonAsync(response, 200, new { success = true, message = $"Banned player '{name}'" });
+            if (banExecuted)
+            {
+                string actionDetail = wasOnlinePeer ? $"Banned and disconnected player '{targetDisplayName}'" : $"Added '{targetDisplayName}' to ban list";
+                AddLog("warn", "BAN", $"{actionDetail} (Reason: {reason})");
+                DiscordWebhookDispatcher.OnAdminAction("Ban", targetDisplayName, "Admin", reason);
+                await SendJsonAsync(response, 200, new { success = true, message = $"{actionDetail}." });
+            }
+            else
+            {
+                AddLog("warn", "BAN", $"Failed ban attempt for '{name}': Valheim network instance unavailable.");
+                await SendJsonAsync(response, 503, new { success = false, message = "Server networking unavailable; unable to register ban." });
+            }
         }
 
         private static async Task HandleGetBans(HttpListenerResponse response)
@@ -882,17 +1008,58 @@ namespace Bifrostheim.Systems.Web
                 return;
             }
 
+            // Disallow multi-command injection via newline or carriage return
+            if (cmd.IndexOf('\n') >= 0 || cmd.IndexOf('\r') >= 0)
+            {
+                AddLog("warn", "SECURITY", $"Rejected multi-line console command attempt from {clientIp}.");
+                await SendJsonAsync(response, 400, new { success = false, output = "Multi-line commands are not allowed." });
+                return;
+            }
+
+            string[] parts = cmd.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            string baseCmd = parts.Length > 0 ? parts[0] : string.Empty;
+
+            if (_blockedConsoleCommands.Contains(baseCmd))
+            {
+                AddLog("warn", "SECURITY", $"Blocked restricted console command '{baseCmd}' from {clientIp}.");
+                await SendJsonAsync(response, 403, new { success = false, output = $"Command '{baseCmd}' is restricted from remote execution." });
+                return;
+            }
+
             AddLog("cmd", "ADMIN", $"> {cmd}");
 
+            bool commandDispatched = false;
             await MainThreadDispatcher.EnqueueAsync(() =>
             {
                 if (global::Console.instance != null)
                 {
                     global::Console.instance.TryRunCommand(cmd);
+                    commandDispatched = true;
+                }
+                else
+                {
+                    try
+                    {
+                        var termInstField = typeof(Terminal).GetField("m_terminalInstance", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                        var termInst = termInstField?.GetValue(null) as Terminal;
+                        if (termInst != null)
+                        {
+                            termInst.TryRunCommand(cmd);
+                            commandDispatched = true;
+                        }
+                    }
+                    catch { }
                 }
             });
 
-            await SendJsonAsync(response, 200, new { success = true, output = $"Command '{cmd}' executed." });
+            if (commandDispatched)
+            {
+                await SendJsonAsync(response, 200, new { success = true, output = $"Command '{cmd}' dispatched for execution." });
+            }
+            else
+            {
+                await SendJsonAsync(response, 503, new { success = false, output = "Server terminal console is not initialized on this instance." });
+            }
         }
 
         private static async Task HandleForceSave(HttpListenerResponse response, string clientIp)
@@ -947,20 +1114,39 @@ namespace Bifrostheim.Systems.Web
                 pendingCopy = _pendingChanges.ToList();
             }
 
-            bool dailyEnabled = BifrostheimPlugin.DailyRestartEnabled?.Value ?? _dailyRestart.enabled;
-            string dailyTime = BifrostheimPlugin.DailyRestartTime?.Value ?? _dailyRestart.time;
+            ScheduledRestartState scheduledCopy;
+            DailyRestartState dailyCopy;
+            lock (_restartLock)
+            {
+                scheduledCopy = new ScheduledRestartState
+                {
+                    active = _scheduledRestart.active,
+                    minutes = _scheduledRestart.minutes,
+                    totalMinutes = _scheduledRestart.totalMinutes,
+                    targetTimestamp = _scheduledRestart.targetTimestamp,
+                    reason = _scheduledRestart.reason
+                };
+                dailyCopy = new DailyRestartState
+                {
+                    enabled = _dailyRestart.enabled,
+                    time = _dailyRestart.time
+                };
+            }
+
+            bool dailyEnabled = BifrostheimPlugin.DailyRestartEnabled?.Value ?? dailyCopy.enabled;
+            string dailyTime = BifrostheimPlugin.DailyRestartTime?.Value ?? dailyCopy.time;
             string lifeMode = BifrostheimPlugin.LifecycleRestartMode?.Value ?? _lifecycleConfig.mode;
             string lifeScript = BifrostheimPlugin.LifecycleScriptPath?.Value ?? _lifecycleConfig.scriptPath;
 
             var res = new
             {
-                scheduledRestart = _scheduledRestart.active ? new
+                scheduledRestart = scheduledCopy.active ? new
                 {
                     active = true,
-                    targetTimestamp = _scheduledRestart.targetTimestamp,
-                    totalMinutes = _scheduledRestart.totalMinutes,
-                    remainingSeconds = Math.Max(0, (int)((_scheduledRestart.targetTimestamp - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) / 1000)),
-                    reason = _scheduledRestart.reason
+                    targetTimestamp = scheduledCopy.targetTimestamp,
+                    totalMinutes = scheduledCopy.totalMinutes,
+                    remainingSeconds = Math.Max(0, (int)((scheduledCopy.targetTimestamp - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) / 1000)),
+                    reason = scheduledCopy.reason
                 } : null,
                 dailyRestart = new
                 {
@@ -1003,16 +1189,25 @@ namespace Bifrostheim.Systems.Web
             string reason = req?.reason ?? "Scheduled maintenance";
 
             long targetTimestamp = DateTimeOffset.UtcNow.AddMinutes(minutes).ToUnixTimeMilliseconds();
-            _scheduledRestart = new ScheduledRestartState
+            lock (_restartLock)
             {
-                active = true,
-                minutes = minutes,
-                totalMinutes = minutes,
-                targetTimestamp = targetTimestamp,
-                reason = reason
-            };
-            _restartWarningsSent.Clear();
-            _isExecutingRestart = false;
+                _scheduledRestart = new ScheduledRestartState
+                {
+                    active = true,
+                    minutes = minutes,
+                    totalMinutes = minutes,
+                    targetTimestamp = targetTimestamp,
+                    reason = reason
+                };
+                _restartWarningsSent.Clear();
+                int[] warningMarks = new int[] { 900, 600, 300, 120, 60, 30, 10 };
+                int totalSec = minutes * 60;
+                foreach (int mark in warningMarks)
+                {
+                    if (mark >= totalSec) _restartWarningsSent.Add(mark);
+                }
+                _isExecutingRestart = false;
+            }
 
             AddLog("warn", "RESTART", $"Server restart scheduled in {minutes} minutes (Reason: {reason})");
             
@@ -1026,9 +1221,12 @@ namespace Bifrostheim.Systems.Web
 
         private static async Task HandleCancelRestart(HttpListenerResponse response, string clientIp)
         {
-            _scheduledRestart = new ScheduledRestartState();
-            _restartWarningsSent.Clear();
-            _isExecutingRestart = false;
+            lock (_restartLock)
+            {
+                _scheduledRestart = new ScheduledRestartState();
+                _restartWarningsSent.Clear();
+                _isExecutingRestart = false;
+            }
 
             AddLog("info", "RESTART", "Scheduled server restart cancelled.");
 
@@ -1044,11 +1242,14 @@ namespace Bifrostheim.Systems.Web
         {
             string body = await ReadBodyAsync(request);
             var req = SimpleJson.DeserializeObject<DailyRestartRequest>(body);
-            _dailyRestart = new DailyRestartState
+            lock (_restartLock)
             {
-                enabled = req?.enabled ?? false,
-                time = req?.time ?? "04:00"
-            };
+                _dailyRestart = new DailyRestartState
+                {
+                    enabled = req?.enabled ?? false,
+                    time = req?.time ?? "04:00"
+                };
+            }
 
             if (BifrostheimPlugin.DailyRestartEnabled != null)
                 BifrostheimPlugin.DailyRestartEnabled.Value = _dailyRestart.enabled;
@@ -1058,7 +1259,10 @@ namespace Bifrostheim.Systems.Web
             {
                 BifrostheimPlugin.Instance?.Config?.Save();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                BifrostheimPlugin.Log?.LogWarning($"[WebApiRouter] Failed to save daily restart config to disk: {ex.Message}");
+            }
 
             AddLog("info", "RESTART", $"Updated daily restart: {(_dailyRestart.enabled ? $"Enabled at {_dailyRestart.time}" : "Disabled")} (Saved to config).");
             await SendJsonAsync(response, 200, new { success = true, dailyRestart = _dailyRestart });
@@ -1090,7 +1294,10 @@ namespace Bifrostheim.Systems.Web
                 {
                     BifrostheimPlugin.Instance?.Config?.Save();
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    BifrostheimPlugin.Log?.LogWarning($"[WebApiRouter] Failed to save lifecycle config to disk: {ex.Message}");
+                }
             }
 
             var saved = new LifecycleConfigState
@@ -1102,14 +1309,40 @@ namespace Bifrostheim.Systems.Web
             await SendJsonAsync(response, 200, new { success = true, lifecycleConfig = saved });
         }
 
+        private static string MaskWebhookUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return string.Empty;
+            url = url.Trim();
+            if (url.Length <= 12) return new string('*', url.Length);
+
+            int lastSlash = url.LastIndexOf('/');
+            if (lastSlash > 0 && lastSlash < url.Length - 4)
+            {
+                string prefix = url.Substring(0, lastSlash + 1);
+                string token = url.Substring(lastSlash + 1);
+                if (token.Length > 8)
+                {
+                    return prefix + new string('*', 8) + token.Substring(token.Length - 4);
+                }
+                return prefix + new string('*', token.Length);
+            }
+
+            return url.Substring(0, 8) + "********" + url.Substring(url.Length - 4);
+        }
+
+        private static bool IsMaskedUrl(string? url)
+        {
+            return !string.IsNullOrEmpty(url) && url.Contains("****");
+        }
+
         private static async Task HandleGetDiscordConfig(HttpListenerResponse response)
         {
             var config = new DiscordConfigDto
             {
                 enabled = BifrostheimPlugin.DiscordEnabled?.Value ?? false,
-                webhookUrl = BifrostheimPlugin.DiscordWebhookUrl?.Value ?? "",
-                overrideChatWebhookUrl = BifrostheimPlugin.DiscordOverrideChatWebhookUrl?.Value ?? "",
-                overrideAdminWebhookUrl = BifrostheimPlugin.DiscordOverrideAdminWebhookUrl?.Value ?? "",
+                webhookUrl = MaskWebhookUrl(BifrostheimPlugin.DiscordWebhookUrl?.Value),
+                overrideChatWebhookUrl = MaskWebhookUrl(BifrostheimPlugin.DiscordOverrideChatWebhookUrl?.Value),
+                overrideAdminWebhookUrl = MaskWebhookUrl(BifrostheimPlugin.DiscordOverrideAdminWebhookUrl?.Value),
                 botUsername = BifrostheimPlugin.DiscordBotUsername?.Value ?? "Bifrostheim Herald",
                 botAvatarUrl = BifrostheimPlugin.DiscordBotAvatarUrl?.Value ?? "",
                 useRichEmbeds = BifrostheimPlugin.DiscordUseRichEmbeds?.Value ?? true,
@@ -1131,10 +1364,29 @@ namespace Bifrostheim.Systems.Web
             var req = SimpleJson.DeserializeObject<DiscordConfigDto>(body);
             if (req != null)
             {
+                if (!string.IsNullOrWhiteSpace(req.webhookUrl) && !IsMaskedUrl(req.webhookUrl) && !DiscordWebhookDispatcher.IsValidDiscordWebhookUrl(req.webhookUrl))
+                {
+                    await SendJsonAsync(response, 400, new { success = false, message = "Primary Discord Webhook URL is invalid. Must use HTTPS and point to an official Discord webhook endpoint." });
+                    return;
+                }
+                if (!string.IsNullOrWhiteSpace(req.overrideChatWebhookUrl) && !IsMaskedUrl(req.overrideChatWebhookUrl) && !DiscordWebhookDispatcher.IsValidDiscordWebhookUrl(req.overrideChatWebhookUrl))
+                {
+                    await SendJsonAsync(response, 400, new { success = false, message = "Chat Override Discord Webhook URL is invalid. Must use HTTPS and point to an official Discord webhook endpoint." });
+                    return;
+                }
+                if (!string.IsNullOrWhiteSpace(req.overrideAdminWebhookUrl) && !IsMaskedUrl(req.overrideAdminWebhookUrl) && !DiscordWebhookDispatcher.IsValidDiscordWebhookUrl(req.overrideAdminWebhookUrl))
+                {
+                    await SendJsonAsync(response, 400, new { success = false, message = "Admin Override Discord Webhook URL is invalid. Must use HTTPS and point to an official Discord webhook endpoint." });
+                    return;
+                }
+
                 if (BifrostheimPlugin.DiscordEnabled != null) BifrostheimPlugin.DiscordEnabled.Value = req.enabled;
-                if (BifrostheimPlugin.DiscordWebhookUrl != null) BifrostheimPlugin.DiscordWebhookUrl.Value = req.webhookUrl?.Trim() ?? "";
-                if (BifrostheimPlugin.DiscordOverrideChatWebhookUrl != null) BifrostheimPlugin.DiscordOverrideChatWebhookUrl.Value = req.overrideChatWebhookUrl?.Trim() ?? "";
-                if (BifrostheimPlugin.DiscordOverrideAdminWebhookUrl != null) BifrostheimPlugin.DiscordOverrideAdminWebhookUrl.Value = req.overrideAdminWebhookUrl?.Trim() ?? "";
+                if (BifrostheimPlugin.DiscordWebhookUrl != null && !IsMaskedUrl(req.webhookUrl))
+                    BifrostheimPlugin.DiscordWebhookUrl.Value = req.webhookUrl?.Trim() ?? "";
+                if (BifrostheimPlugin.DiscordOverrideChatWebhookUrl != null && !IsMaskedUrl(req.overrideChatWebhookUrl))
+                    BifrostheimPlugin.DiscordOverrideChatWebhookUrl.Value = req.overrideChatWebhookUrl?.Trim() ?? "";
+                if (BifrostheimPlugin.DiscordOverrideAdminWebhookUrl != null && !IsMaskedUrl(req.overrideAdminWebhookUrl))
+                    BifrostheimPlugin.DiscordOverrideAdminWebhookUrl.Value = req.overrideAdminWebhookUrl?.Trim() ?? "";
                 if (BifrostheimPlugin.DiscordBotUsername != null) BifrostheimPlugin.DiscordBotUsername.Value = string.IsNullOrWhiteSpace(req.botUsername) ? "Bifrostheim Herald" : req.botUsername.Trim();
                 if (BifrostheimPlugin.DiscordBotAvatarUrl != null) BifrostheimPlugin.DiscordBotAvatarUrl.Value = req.botAvatarUrl?.Trim() ?? "";
                 if (BifrostheimPlugin.DiscordUseRichEmbeds != null) BifrostheimPlugin.DiscordUseRichEmbeds.Value = req.useRichEmbeds;
@@ -1151,7 +1403,10 @@ namespace Bifrostheim.Systems.Web
                 {
                     BifrostheimPlugin.Instance?.Config?.Save();
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    BifrostheimPlugin.Log?.LogWarning($"[WebApiRouter] Failed to save Discord config to disk: {ex.Message}");
+                }
 
                 AddLog("info", "DISCORD", "Updated Discord webhook configuration (Saved to disk).");
             }
@@ -1159,9 +1414,9 @@ namespace Bifrostheim.Systems.Web
             var saved = new DiscordConfigDto
             {
                 enabled = BifrostheimPlugin.DiscordEnabled?.Value ?? false,
-                webhookUrl = BifrostheimPlugin.DiscordWebhookUrl?.Value ?? "",
-                overrideChatWebhookUrl = BifrostheimPlugin.DiscordOverrideChatWebhookUrl?.Value ?? "",
-                overrideAdminWebhookUrl = BifrostheimPlugin.DiscordOverrideAdminWebhookUrl?.Value ?? "",
+                webhookUrl = MaskWebhookUrl(BifrostheimPlugin.DiscordWebhookUrl?.Value),
+                overrideChatWebhookUrl = MaskWebhookUrl(BifrostheimPlugin.DiscordOverrideChatWebhookUrl?.Value),
+                overrideAdminWebhookUrl = MaskWebhookUrl(BifrostheimPlugin.DiscordOverrideAdminWebhookUrl?.Value),
                 botUsername = BifrostheimPlugin.DiscordBotUsername?.Value ?? "Bifrostheim Herald",
                 botAvatarUrl = BifrostheimPlugin.DiscordBotAvatarUrl?.Value ?? "",
                 useRichEmbeds = BifrostheimPlugin.DiscordUseRichEmbeds?.Value ?? true,
@@ -1184,6 +1439,16 @@ namespace Bifrostheim.Systems.Web
             var req = SimpleJson.DeserializeObject<DiscordTestRequestDto>(body);
             string eventType = !string.IsNullOrWhiteSpace(req?.eventType) ? req!.eventType!.Trim() : "server_online";
             string? explicitUrl = !string.IsNullOrWhiteSpace(req?.webhookUrl) ? req!.webhookUrl!.Trim() : null;
+            if (IsMaskedUrl(explicitUrl))
+            {
+                explicitUrl = null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(explicitUrl) && !DiscordWebhookDispatcher.IsValidDiscordWebhookUrl(explicitUrl))
+            {
+                await SendJsonAsync(response, 400, new { success = false, message = "Invalid Discord Webhook URL. URL must use HTTPS and point to an official Discord webhook endpoint." });
+                return;
+            }
 
             var (success, message) = await DiscordWebhookDispatcher.SendImmediateTestAsync(eventType, explicitUrl);
             AddLog(success ? "info" : "warn", "DISCORD", $"Test webhook '{eventType}': {message}");
@@ -1199,62 +1464,96 @@ namespace Bifrostheim.Systems.Web
             try
             {
                 // 1. Scheduled Restart Countdown & Execution
-                if (_scheduledRestart != null && _scheduledRestart.active && !_isExecutingRestart)
+                bool shouldExecuteRestart = false;
+                List<(int mark, string timeText, string reason)> warningsToBroadcast = new List<(int, string, string)>();
+
+                lock (_restartLock)
                 {
-                    long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    int remainingSec = Math.Max(0, (int)((_scheduledRestart.targetTimestamp - nowMs) / 1000));
-
-                    // In-game warning intervals: 15m, 10m, 5m, 2m, 1m, 30s, 10s
-                    int[] warningMarks = new int[] { 900, 600, 300, 120, 60, 30, 10 };
-                    foreach (int mark in warningMarks)
+                    if (_scheduledRestart != null && _scheduledRestart.active && !_isExecutingRestart)
                     {
-                        if (remainingSec <= mark && remainingSec > mark - 3 && !_restartWarningsSent.Contains(mark))
-                        {
-                            _restartWarningsSent.Add(mark);
-                            string timeText = mark >= 60 ? $"{mark / 60} minute{(mark / 60 > 1 ? "s" : "")}" : $"{mark} seconds";
-                            string shout = $"⚠️ SERVER RESTART in {timeText}! Reason: {_scheduledRestart.reason}. Please find shelter.";
-                            ZNetHelper.BroadcastServerMessage(shout);
-                            AddLog("warn", "RESTART", $"Broadcast in-game warning: {timeText} remaining.");
+                        long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                        int remainingSec = Math.Max(0, (int)((_scheduledRestart.targetTimestamp - nowMs) / 1000));
 
-                            if (mark == 600 || mark == 300 || mark == 60)
+                        // In-game warning intervals: 15m, 10m, 5m, 2m, 1m, 30s, 10s
+                        int[] warningMarks = new int[] { 900, 600, 300, 120, 60, 30, 10 };
+                        foreach (int mark in warningMarks)
+                        {
+                            if (remainingSec <= mark && !_restartWarningsSent.Contains(mark))
                             {
-                                DiscordWebhookDispatcher.OnServerLifecycle("⏳ Scheduled Server Restart Warning", $"Server restarting in {timeText}! Reason: {_scheduledRestart.reason}. Find shelter!", DiscordWebhookDispatcher.ColorOrange, true);
+                                _restartWarningsSent.Add(mark);
+                                string timeText = mark >= 60 ? $"{mark / 60} minute{(mark / 60 > 1 ? "s" : "")}" : $"{mark} seconds";
+                                warningsToBroadcast.Add((mark, timeText, _scheduledRestart.reason));
                             }
+                        }
+
+                        if (remainingSec <= 0)
+                        {
+                            _isExecutingRestart = true;
+                            shouldExecuteRestart = true;
                         }
                     }
 
-                    if (remainingSec <= 0)
+                    // 2. Automated Daily Restart Trigger
+                    bool dailyEnabled = BifrostheimPlugin.DailyRestartEnabled?.Value ?? _dailyRestart.enabled;
+                    string dailyTime = BifrostheimPlugin.DailyRestartTime?.Value ?? _dailyRestart.time;
+
+                    if (dailyEnabled && !string.IsNullOrWhiteSpace(dailyTime) && (_scheduledRestart == null || !_scheduledRestart.active))
                     {
-                        _isExecutingRestart = true;
-                        ExecuteServerRestartSequence();
+                        string today = DateTime.Now.ToString("yyyy-MM-dd");
+                        string currentHhMm = DateTime.Now.ToString("HH:mm");
+                        if (currentHhMm == dailyTime && _lastDailyRestartDate != today)
+                        {
+                            _lastDailyRestartDate = today;
+                            int minutes = 5;
+                            long target = DateTimeOffset.UtcNow.AddMinutes(minutes).ToUnixTimeMilliseconds();
+                            _scheduledRestart = new ScheduledRestartState
+                            {
+                                active = true,
+                                minutes = minutes,
+                                totalMinutes = minutes,
+                                targetTimestamp = target,
+                                reason = "Automated daily maintenance"
+                            };
+                            _restartWarningsSent.Clear();
+                            warningsToBroadcast.Add((-1, $"{minutes} minutes", "Automated daily maintenance"));
+                        }
                     }
                 }
 
-                // 2. Automated Daily Restart Trigger
-                bool dailyEnabled = BifrostheimPlugin.DailyRestartEnabled?.Value ?? _dailyRestart.enabled;
-                string dailyTime = BifrostheimPlugin.DailyRestartTime?.Value ?? _dailyRestart.time;
-
-                if (dailyEnabled && !string.IsNullOrWhiteSpace(dailyTime) && (_scheduledRestart == null || !_scheduledRestart.active))
+                // Broadcast warnings outside the lock to avoid holding the lock during RPC/Discord calls
+                foreach (var warning in warningsToBroadcast)
                 {
-                    string today = DateTime.UtcNow.ToString("yyyy-MM-dd");
-                    string currentHhMm = DateTime.Now.ToString("HH:mm");
-                    if (currentHhMm == dailyTime && _lastDailyRestartDate != today)
+                    if (warning.mark == -1)
                     {
-                        _lastDailyRestartDate = today;
-                        int minutes = 5;
-                        long target = DateTimeOffset.UtcNow.AddMinutes(minutes).ToUnixTimeMilliseconds();
-                        _scheduledRestart = new ScheduledRestartState
-                        {
-                            active = true,
-                            minutes = minutes,
-                            totalMinutes = minutes,
-                            targetTimestamp = target,
-                            reason = "Automated daily maintenance"
-                        };
-                        _restartWarningsSent.Clear();
-                        AddLog("warn", "RESTART", $"Daily restart triggered automatically for {minutes}m countdown.");
-                        ZNetHelper.BroadcastServerMessage($"⚠️ AUTOMATED DAILY RESTART scheduled in {minutes} minutes. World will be saved.");
+                        AddLog("warn", "RESTART", $"Daily restart triggered automatically for {warning.timeText} countdown.");
+                        ZNetHelper.BroadcastServerMessage($"⚠️ AUTOMATED DAILY RESTART scheduled in {warning.timeText}. World will be saved.");
                     }
+                    else
+                    {
+                        string shout = $"⚠️ SERVER RESTART in {warning.timeText}! Reason: {warning.reason}. Please find shelter.";
+                        ZNetHelper.BroadcastServerMessage(shout);
+                        AddLog("warn", "RESTART", $"Broadcast in-game warning: {warning.timeText} remaining.");
+
+                        if (warning.mark == 600 || warning.mark == 300 || warning.mark == 60)
+                        {
+                            DiscordWebhookDispatcher.OnServerLifecycle("⏳ Scheduled Server Restart Warning", $"Server restarting in {warning.timeText}! Reason: {warning.reason}. Find shelter!", DiscordWebhookDispatcher.ColorOrange, true);
+                        }
+                    }
+                }
+
+                // Prune expired sessions and rate-limit lockouts once per minute (m-2)
+                if (DateTime.UtcNow.Second == 0)
+                {
+                    var expiredSessions = _activeSessions.Where(kvp => kvp.Value < DateTime.UtcNow).Select(kvp => kvp.Key).ToList();
+                    foreach (var token in expiredSessions) _activeSessions.TryRemove(token, out _);
+
+                    var expiredLimits = _loginRateLimits.Where(kvp => DateTime.UtcNow >= kvp.Value.lockoutUntil && kvp.Value.lockoutUntil != DateTime.MinValue).Select(kvp => kvp.Key).ToList();
+                    foreach (var ip in expiredLimits) _loginRateLimits.TryRemove(ip, out _);
+                }
+
+                if (shouldExecuteRestart)
+                {
+                    ExecuteServerRestartSequence();
                 }
             }
             catch (Exception ex)
@@ -1273,7 +1572,7 @@ namespace Bifrostheim.Systems.Web
             {
                 try
                 {
-                    // 1. Force world save on Unity thread
+                    // 1. Force world save and cleanly disconnect peers on Unity thread
                     await MainThreadDispatcher.EnqueueAsync(() =>
                     {
                         try
@@ -1282,6 +1581,12 @@ namespace Bifrostheim.Systems.Web
                             {
                                 ZNet.instance.Save(true);
                                 BifrostheimPlugin.Log?.LogInfo("[WebApiRouter] World save completed before restart.");
+
+                                var peers = ZNetHelper.GetPeers();
+                                foreach (var peer in peers)
+                                {
+                                    try { ZNet.instance.Disconnect(peer); } catch { }
+                                }
                             }
                         }
                         catch (Exception ex)
@@ -1294,6 +1599,9 @@ namespace Bifrostheim.Systems.Web
                     // Stop WebPortalServer listener cleanly so it doesn't hold ports or threads
                     WebPortalServer.Stop();
 
+                    // Flush pending Discord notifications before shutting down dispatcher (M-2)
+                    DiscordWebhookDispatcher.Shutdown(drainFirst: true);
+
                     string lifeMode = BifrostheimPlugin.LifecycleRestartMode?.Value ?? _lifecycleConfig.mode;
                     string lifeScript = BifrostheimPlugin.LifecycleScriptPath?.Value ?? _lifecycleConfig.scriptPath;
 
@@ -1305,7 +1613,7 @@ namespace Bifrostheim.Systems.Web
                             if (File.Exists(lifeScript))
                             {
                                 BifrostheimPlugin.Log?.LogInfo($"[WebApiRouter] Spawning external restart process: '{lifeScript}'");
-                                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                                using var proc = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                                 {
                                     FileName = lifeScript,
                                     UseShellExecute = false
@@ -1323,36 +1631,31 @@ namespace Bifrostheim.Systems.Web
                     }
 
                     // 3. For Docker containers (e.g. lloesche/valheim-server):
-                    // Shutdown supervisord (PID 1) so Docker Compose 'restart: always' reboots the entire container cleanly.
-                    try
-                    {
-                        var psiShutdown = new System.Diagnostics.ProcessStartInfo
-                        {
-                            FileName = "supervisorctl",
-                            Arguments = "shutdown",
-                            UseShellExecute = false,
-                            RedirectStandardOutput = true,
-                            RedirectStandardError = true,
-                            CreateNoWindow = true
-                        };
-                        System.Diagnostics.Process.Start(psiShutdown);
-                        BifrostheimPlugin.Log?.LogInfo("[WebApiRouter] Dispatched 'supervisorctl shutdown' to trigger Docker container restart.");
-                    }
-                    catch { }
+                    // Only attempt supervisorctl if verified to be inside a container (C-2)
+                    bool isDockerContainer = File.Exists("/.dockerenv") ||
+                        (File.Exists("/proc/1/cgroup") && File.ReadAllText("/proc/1/cgroup").Contains("docker"));
 
-                    try
+                    if (isDockerContainer)
                     {
-                        // Direct SIGTERM to PID 1 (supervisord) in Linux/Docker environments
-                        var psiKill = new System.Diagnostics.ProcessStartInfo
+                        try
                         {
-                            FileName = "kill",
-                            Arguments = "-15 1",
-                            UseShellExecute = false,
-                            CreateNoWindow = true
-                        };
-                        System.Diagnostics.Process.Start(psiKill);
+                            var psiShutdown = new System.Diagnostics.ProcessStartInfo
+                            {
+                                FileName = "supervisorctl",
+                                Arguments = "shutdown",
+                                UseShellExecute = false,
+                                RedirectStandardOutput = true,
+                                RedirectStandardError = true,
+                                CreateNoWindow = true
+                            };
+                            using var proc = System.Diagnostics.Process.Start(psiShutdown);
+                            BifrostheimPlugin.Log?.LogInfo("[WebApiRouter] Dispatched 'supervisorctl shutdown' to trigger Docker container restart.");
+                        }
+                        catch (Exception ex)
+                        {
+                            BifrostheimPlugin.Log?.LogDebug($"[WebApiRouter] supervisorctl shutdown not available: {ex.Message}");
+                        }
                     }
-                    catch { }
 
                     // 4. Terminate process fallback
                     await MainThreadDispatcher.EnqueueAsync(() =>
@@ -1378,7 +1681,32 @@ namespace Bifrostheim.Systems.Web
         // ── CharactersVault Handlers ──
         private static async Task HandleGetCharacterBindings(HttpListenerResponse response)
         {
-            var bindings = ConfigSyncManager.LoadCharacterVaultBindings();
+            var onlineIdentifiers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            await MainThreadDispatcher.EnqueueAsync(() =>
+            {
+                if (ZNet.instance != null)
+                {
+                    foreach (var peer in ZNetHelper.GetPeers())
+                    {
+                        if (peer == null) continue;
+                        string id = ZNetHelper.GetPlayerId(peer);
+                        if (!string.IsNullOrWhiteSpace(id))
+                        {
+                            onlineIdentifiers.Add(id);
+                            if (id.StartsWith("Steam_", StringComparison.OrdinalIgnoreCase))
+                            {
+                                onlineIdentifiers.Add(id.Substring(6));
+                            }
+                        }
+                        if (!string.IsNullOrWhiteSpace(peer.m_playerName))
+                        {
+                            onlineIdentifiers.Add(peer.m_playerName);
+                        }
+                    }
+                }
+            });
+
+            var bindings = ConfigSyncManager.LoadCharacterVaultBindings(onlineIdentifiers);
             await SendJsonAsync(response, 200, bindings);
         }
 
@@ -1516,9 +1844,17 @@ namespace Bifrostheim.Systems.Web
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                BifrostheimPlugin.Log?.LogDebug($"[WebApiRouter] Skald live reflection query failed, falling back to local chronicle: {ex.Message}");
+            }
 
-            await SendJsonAsync(response, 200, _skaldChronicle);
+            List<SkaldDeathRecordDto> chronicleSnapshot;
+            lock (_skaldLock)
+            {
+                chronicleSnapshot = new List<SkaldDeathRecordDto>(_skaldChronicle);
+            }
+            await SendJsonAsync(response, 200, chronicleSnapshot);
         }
 
 
@@ -1536,8 +1872,11 @@ namespace Bifrostheim.Systems.Web
                 formattedMessage = "VikingWarrior was crushed by Troll in Black Forest.",
                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
             };
-            _skaldChronicle.Insert(0, record);
-            if (_skaldChronicle.Count > 100) _skaldChronicle.RemoveAt(_skaldChronicle.Count - 1);
+            lock (_skaldLock)
+            {
+                _skaldChronicle.Insert(0, record);
+                if (_skaldChronicle.Count > 100) _skaldChronicle.RemoveAt(_skaldChronicle.Count - 1);
+            }
 
             await SendJsonAsync(response, 200, new { success = true, record });
         }
@@ -1618,11 +1957,30 @@ namespace Bifrostheim.Systems.Web
             await SendJsonAsync(response, 200, new { success = true, config = updated });
         }
 
-        private static async Task<string> ReadBodyAsync(HttpListenerRequest request)
+        private static async Task<string> ReadBodyAsync(HttpListenerRequest request, int maxBytes = MaxRequestBodySizeBytes)
         {
-            using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
+            if (request.ContentLength64 > maxBytes)
             {
-                return await reader.ReadToEndAsync();
+                throw new InvalidOperationException($"Request body exceeds maximum allowed size of {maxBytes} bytes.");
+            }
+
+            var encoding = request.ContentEncoding ?? Encoding.UTF8;
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using (var ms = new MemoryStream())
+            {
+                byte[] buffer = new byte[8192];
+                int totalRead = 0;
+                int bytesRead;
+                while ((bytesRead = await request.InputStream.ReadAsync(buffer, 0, buffer.Length, timeoutCts.Token)) > 0)
+                {
+                    totalRead += bytesRead;
+                    if (totalRead > maxBytes)
+                    {
+                        throw new InvalidOperationException($"Request body exceeds maximum allowed size of {maxBytes} bytes.");
+                    }
+                    ms.Write(buffer, 0, bytesRead);
+                }
+                return encoding.GetString(ms.ToArray());
             }
         }
 
@@ -1634,11 +1992,6 @@ namespace Bifrostheim.Systems.Web
             response.StatusCode = statusCode;
             response.ContentType = "application/json; charset=utf-8";
             response.ContentLength64 = bytes.Length;
-            try
-            {
-                response.Headers["Access-Control-Allow-Origin"] = "*";
-            }
-            catch { }
 
             using (var stream = response.OutputStream)
             {

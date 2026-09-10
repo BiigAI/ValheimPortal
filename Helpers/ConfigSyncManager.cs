@@ -650,7 +650,7 @@ namespace Bifrostheim.Helpers
             return primary;
         }
 
-        public static List<Dictionary<string, object>> LoadCharacterVaultBindings()
+        public static List<Dictionary<string, object>> LoadCharacterVaultBindings(HashSet<string>? onlineIdentifiers = null)
         {
             try
             {
@@ -661,7 +661,7 @@ namespace Bifrostheim.Helpers
                 }
 
                 string json = File.ReadAllText(filePath, Encoding.UTF8);
-                return ParseCharacterBindings(json, filePath);
+                return ParseCharacterBindings(json, filePath, onlineIdentifiers);
             }
             catch (Exception ex)
             {
@@ -670,7 +670,7 @@ namespace Bifrostheim.Helpers
             }
         }
 
-        public static List<Dictionary<string, object>> ParseCharacterBindings(string json, string? filePath = null)
+        public static List<Dictionary<string, object>> ParseCharacterBindings(string json, string? filePath = null, HashSet<string>? onlineIdentifiers = null)
         {
             var result = new List<Dictionary<string, object>>();
             if (string.IsNullOrWhiteSpace(json)) return result;
@@ -693,7 +693,7 @@ namespace Bifrostheim.Helpers
 
                     if (isSingleRecordObject)
                     {
-                        return ParseListBindings(new List<object> { dict });
+                        return ParseListBindings(new List<object> { dict }, onlineIdentifiers);
                     }
 
                     // Check for single wrapper key like { "bindings": { ... } } or { "characters": [ ... ] }
@@ -705,7 +705,7 @@ namespace Bifrostheim.Helpers
 
                         if (first.Value is System.Collections.IList wrappedList)
                         {
-                            return ParseListBindings(wrappedList);
+                            return ParseListBindings(wrappedList, onlineIdentifiers);
                         }
                         else if (wrapperKeys.Contains(firstKeyLower) && first.Value is IDictionary<string, object?> wrappedDict)
                         {
@@ -766,7 +766,7 @@ namespace Bifrostheim.Helpers
                         }
 
                         // 1. Check live online status
-                        if (IsPlayerOnline(steamId, characterName))
+                        if (IsPlayerOnline(steamId, characterName, onlineIdentifiers))
                         {
                             lastLogin = "Online Now";
                             status = "Online";
@@ -803,7 +803,7 @@ namespace Bifrostheim.Helpers
                 // If root is a list [ { ... }, ... ]
                 else if (parsed is System.Collections.IList list)
                 {
-                    return ParseListBindings(list);
+                    return ParseListBindings(list, onlineIdentifiers);
                 }
             }
             catch (Exception ex)
@@ -814,7 +814,7 @@ namespace Bifrostheim.Helpers
             return result;
         }
 
-        private static List<Dictionary<string, object>> ParseListBindings(System.Collections.IList list)
+        private static List<Dictionary<string, object>> ParseListBindings(System.Collections.IList list, HashSet<string>? onlineIdentifiers = null)
         {
             var result = new List<Dictionary<string, object>>();
             foreach (var item in list)
@@ -846,7 +846,7 @@ namespace Bifrostheim.Helpers
                     string? created = extCreated;
                     string? lastLogin = extLogin;
 
-                    if (IsPlayerOnline(steamId, charName))
+                    if (IsPlayerOnline(steamId, charName, onlineIdentifiers))
                     {
                         lastLogin = "Online Now";
                         status = "Online";
@@ -874,7 +874,7 @@ namespace Bifrostheim.Helpers
                     string lastLogin = "—";
                     string status = "Bound";
 
-                    if (IsPlayerOnline(strItem, strItem))
+                    if (IsPlayerOnline(strItem, strItem, onlineIdentifiers))
                     {
                         lastLogin = "Online Now";
                         status = "Online";
@@ -901,8 +901,17 @@ namespace Bifrostheim.Helpers
 
         public static Func<string, string, bool>? OnlinePlayerChecker { get; set; }
 
-        private static bool IsPlayerOnline(string steamId, string characterName)
+        private static bool IsPlayerOnline(string steamId, string characterName, HashSet<string>? onlineIdentifiers = null)
         {
+            if (onlineIdentifiers != null)
+            {
+                string cleanSteam = steamId.StartsWith("Steam_", StringComparison.OrdinalIgnoreCase) ? steamId.Substring(6) : steamId;
+                string prefixedSteam = steamId.StartsWith("Steam_", StringComparison.OrdinalIgnoreCase) ? steamId : "Steam_" + steamId;
+                return onlineIdentifiers.Contains(cleanSteam) ||
+                       onlineIdentifiers.Contains(prefixedSteam) ||
+                       (!string.IsNullOrWhiteSpace(characterName) && onlineIdentifiers.Contains(characterName));
+            }
+
             try
             {
                 return OnlinePlayerChecker != null && OnlinePlayerChecker(steamId, characterName);
@@ -1445,6 +1454,12 @@ namespace Bifrostheim.Helpers
                 displayName = CleanDisplayName(safeName),
                 sections = new List<OtherModSectionDto>()
             };
+
+            if (!safeName.EndsWith(".cfg", StringComparison.OrdinalIgnoreCase))
+            {
+                BifrostheimPlugin.Log?.LogWarning($"[ConfigSyncManager] Rejected attempt to parse non-.cfg file '{safeName}'.");
+                return detail;
+            }
 
             string configDir = GetConfigDirectory();
             string filePath = Path.Combine(configDir, safeName);

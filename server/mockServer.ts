@@ -399,9 +399,13 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
   const sendJson = (data: any, status = 200) => {
     res.statusCode = status;
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    const origin = (req.headers['origin'] as string | undefined) || '';
+    if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1') || origin.includes('::1'))) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+    }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Admin-Password');
     res.end(JSON.stringify(data));
   };
 
@@ -410,11 +414,21 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
     return true;
   }
 
-  // Parse Body helper
+  // Parse Body helper with size bounds
   const readBody = (callback: (body: any) => void) => {
     let body = '';
-    req.on('data', chunk => { body += chunk; });
+    let exceeded = false;
+    req.on('data', chunk => {
+      body += chunk;
+      if (body.length > 1024 * 1024) {
+        exceeded = true;
+      }
+    });
     req.on('end', () => {
+      if (exceeded) {
+        sendJson({ error: 'Request body exceeds maximum allowed size.' }, 413);
+        return;
+      }
       try {
         callback(body ? JSON.parse(body) : {});
       } catch (err) {
@@ -630,6 +644,35 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
       const cmd = (data.command || '').trim();
       const time = new Date().toLocaleTimeString();
 
+      if (!cmd) {
+        sendJson({ success: false, output: 'Command is empty.' }, 400);
+        return;
+      }
+
+      if (cmd.includes('\n') || cmd.includes('\r')) {
+        sendJson({ success: false, output: 'Multi-line commands are not allowed.' }, 400);
+        return;
+      }
+
+      const blockedCommands = new Set([
+        'devcommands',
+        'debugmode',
+        'god',
+        'ghost',
+        'dpspath',
+        'resetwind',
+        'killall',
+        'spawn',
+        'fly',
+        'nocost',
+        'raiseskill',
+      ]);
+      const baseCmd = cmd.split(/\s+/)[0].toLowerCase();
+      if (blockedCommands.has(baseCmd)) {
+        sendJson({ success: false, output: `Command '${baseCmd}' is restricted from remote execution.` }, 403);
+        return;
+      }
+
       serverState.logs.push({
         time,
         source: 'AdminConsole',
@@ -637,7 +680,7 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
         level: 'cmd',
       });
 
-      let responseText = `Executed: ${cmd}`;
+      let responseText = `Command '${cmd}' dispatched for execution.`;
       if (cmd.toLowerCase() === 'save') {
         responseText = 'Saving world "Valhalla"... Saved 42,189 objects in 0.038s.';
         serverState.logs.push({ time, source: 'WorldSave', text: responseText, level: 'success' });
@@ -814,15 +857,73 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
     return true;
   }
 
+function maskWebhookUrl(url?: string): string {
+  if (!url) return '';
+  url = url.trim();
+  if (url.length <= 12) return '*'.repeat(url.length);
+  const lastSlash = url.lastIndexOf('/');
+  if (lastSlash > 0 && lastSlash < url.length - 4) {
+    const prefix = url.substring(0, lastSlash + 1);
+    const token = url.substring(lastSlash + 1);
+    if (token.length > 8) {
+      return prefix + '*'.repeat(8) + token.substring(token.length - 4);
+    }
+    return prefix + '*'.repeat(token.length);
+  }
+  return url.substring(0, 8) + '********' + url.substring(url.length - 4);
+}
+
+function isMaskedUrl(url?: string): boolean {
+  return Boolean(url && url.includes('****'));
+}
+
+function isValidDiscordWebhookUrl(url?: string): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url.trim());
+    if (parsed.protocol !== 'https:') return false;
+    const host = parsed.hostname.toLowerCase();
+    const isDiscord = host === 'discord.com' || host === 'discordapp.com' || host === 'canary.discord.com' || host === 'ptb.discord.com';
+    return isDiscord && parsed.pathname.startsWith('/api/webhooks/') && parsed.pathname.length > 15;
+  } catch {
+    return false;
+  }
+}
+
   // ── Discord Webhook Mock Handlers ──────────────────────────────────────────
   if (url === '/api/discord/config' && method === 'GET') {
-    sendJson(serverState.discordConfig);
+    const maskedConfig = {
+      ...serverState.discordConfig,
+      webhookUrl: maskWebhookUrl(serverState.discordConfig.webhookUrl),
+      overrideChatWebhookUrl: maskWebhookUrl(serverState.discordConfig.overrideChatWebhookUrl),
+      overrideAdminWebhookUrl: maskWebhookUrl(serverState.discordConfig.overrideAdminWebhookUrl),
+    };
+    sendJson(maskedConfig);
     return true;
   }
 
   if (url === '/api/discord/config' && method === 'POST') {
     readBody((data) => {
-      Object.assign(serverState.discordConfig, data);
+      if (data) {
+        if (data.webhookUrl && !isMaskedUrl(data.webhookUrl) && !isValidDiscordWebhookUrl(data.webhookUrl)) {
+          sendJson({ success: false, message: 'Primary Discord Webhook URL is invalid. Must use HTTPS and point to an official Discord webhook endpoint.' }, 400);
+          return;
+        }
+        if (data.overrideChatWebhookUrl && !isMaskedUrl(data.overrideChatWebhookUrl) && !isValidDiscordWebhookUrl(data.overrideChatWebhookUrl)) {
+          sendJson({ success: false, message: 'Chat Override Discord Webhook URL is invalid. Must use HTTPS and point to an official Discord webhook endpoint.' }, 400);
+          return;
+        }
+        if (data.overrideAdminWebhookUrl && !isMaskedUrl(data.overrideAdminWebhookUrl) && !isValidDiscordWebhookUrl(data.overrideAdminWebhookUrl)) {
+          sendJson({ success: false, message: 'Admin Override Discord Webhook URL is invalid. Must use HTTPS and point to an official Discord webhook endpoint.' }, 400);
+          return;
+        }
+
+        const updateData = { ...data };
+        if (isMaskedUrl(updateData.webhookUrl)) delete updateData.webhookUrl;
+        if (isMaskedUrl(updateData.overrideChatWebhookUrl)) delete updateData.overrideChatWebhookUrl;
+        if (isMaskedUrl(updateData.overrideAdminWebhookUrl)) delete updateData.overrideAdminWebhookUrl;
+        Object.assign(serverState.discordConfig, updateData);
+      }
       const time = new Date().toLocaleTimeString();
       serverState.logs.push({
         time,
@@ -830,7 +931,13 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
         text: `Updated Discord webhook configuration: ${serverState.discordConfig.enabled ? 'Enabled' : 'Disabled'}`,
         level: 'info',
       });
-      sendJson({ success: true, config: serverState.discordConfig });
+      const maskedConfig = {
+        ...serverState.discordConfig,
+        webhookUrl: maskWebhookUrl(serverState.discordConfig.webhookUrl),
+        overrideChatWebhookUrl: maskWebhookUrl(serverState.discordConfig.overrideChatWebhookUrl),
+        overrideAdminWebhookUrl: maskWebhookUrl(serverState.discordConfig.overrideAdminWebhookUrl),
+      };
+      sendJson({ success: true, config: maskedConfig });
     });
     return true;
   }
@@ -838,10 +945,19 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
   if (url === '/api/discord/test' && method === 'POST') {
     readBody(async (data) => {
       const eventType = (data.eventType || 'server_online').toLowerCase();
-      const targetUrl = (data.webhookUrl || serverState.discordConfig.webhookUrl || '').trim();
+      let explicitUrl = (data.webhookUrl || '').trim();
+      if (isMaskedUrl(explicitUrl)) {
+        explicitUrl = '';
+      }
+      const targetUrl = explicitUrl || (serverState.discordConfig.webhookUrl || '').trim();
 
       if (!targetUrl) {
         sendJson({ success: false, message: 'No Discord Webhook URL provided or configured.', eventType }, 400);
+        return;
+      }
+
+      if (!isValidDiscordWebhookUrl(targetUrl)) {
+        sendJson({ success: false, message: 'Invalid Discord Webhook URL. URL must use HTTPS and point to an official Discord webhook endpoint.', eventType }, 400);
         return;
       }
 

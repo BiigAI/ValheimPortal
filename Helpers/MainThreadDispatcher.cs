@@ -39,7 +39,7 @@ namespace Bifrostheim.Helpers
 
         public static Task EnqueueAsync(Action action)
         {
-            var tcs = new TaskCompletionSource<bool>();
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             Enqueue(() =>
             {
                 try
@@ -57,7 +57,7 @@ namespace Bifrostheim.Helpers
 
         public static Task<T> EnqueueAsync<T>(Func<T> function)
         {
-            var tcs = new TaskCompletionSource<T>();
+            var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
             Enqueue(() =>
             {
                 try

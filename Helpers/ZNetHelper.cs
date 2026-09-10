@@ -21,15 +21,20 @@ namespace Bifrostheim.Helpers
 
         static ZNetHelper()
         {
-            try
-            {
-                FiPeers = typeof(ZNet).GetField("m_peers", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance);
-                FiAdminList = typeof(ZNet).GetField("m_adminList", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance);
-                FiBannedList = typeof(ZNet).GetField("m_bannedList", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance);
-                FiServerPlayerLimit = typeof(ZNet).GetField("m_serverPlayerLimit", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance);
-                MiListContainsId = typeof(ZNet).GetMethod("ListContainsId", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance);
-            }
-            catch { }
+            try { FiPeers = typeof(ZNet).GetField("m_peers", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance); }
+            catch (Exception ex) { BifrostheimPlugin.Log?.LogWarning($"[ZNetHelper] Failed to reflect ZNet.m_peers: {ex.Message}"); }
+
+            try { FiAdminList = typeof(ZNet).GetField("m_adminList", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance); }
+            catch (Exception ex) { BifrostheimPlugin.Log?.LogWarning($"[ZNetHelper] Failed to reflect ZNet.m_adminList: {ex.Message}"); }
+
+            try { FiBannedList = typeof(ZNet).GetField("m_bannedList", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance); }
+            catch (Exception ex) { BifrostheimPlugin.Log?.LogWarning($"[ZNetHelper] Failed to reflect ZNet.m_bannedList: {ex.Message}"); }
+
+            try { FiServerPlayerLimit = typeof(ZNet).GetField("m_serverPlayerLimit", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance); }
+            catch (Exception ex) { BifrostheimPlugin.Log?.LogWarning($"[ZNetHelper] Failed to reflect ZNet.m_serverPlayerLimit: {ex.Message}"); }
+
+            try { MiListContainsId = typeof(ZNet).GetMethod("ListContainsId", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance); }
+            catch (Exception ex) { BifrostheimPlugin.Log?.LogWarning($"[ZNetHelper] Failed to reflect ZNet.ListContainsId: {ex.Message}"); }
         }
 
         // ── Public API ─────────────────────────────────────────────────────────────
@@ -37,8 +42,16 @@ namespace Bifrostheim.Helpers
         public static List<ZNetPeer> GetPeers()
         {
             if (ZNet.instance == null || FiPeers == null) return new List<ZNetPeer>();
-            var raw = FiPeers.GetValue(ZNet.instance) as List<ZNetPeer>;
-            return raw != null ? new List<ZNetPeer>(raw) : new List<ZNetPeer>();
+            try
+            {
+                var raw = FiPeers.GetValue(ZNet.instance) as List<ZNetPeer>;
+                return raw != null ? new List<ZNetPeer>(raw) : new List<ZNetPeer>();
+            }
+            catch (Exception ex)
+            {
+                BifrostheimPlugin.Log?.LogDebug($"[ZNetHelper] Concurrent modification during GetPeers snapshot: {ex.Message}");
+                return new List<ZNetPeer>();
+            }
         }
 
         public static int GetServerPlayerLimit()
@@ -101,7 +114,10 @@ namespace Bifrostheim.Helpers
                     if (field != null && field.GetValue(peer.m_rpc) is float f) return (int)(f * 1000f);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                BifrostheimPlugin.Log?.LogDebug($"[ZNetHelper] Error resolving peer ping: {ex.Message}");
+            }
             return 0;
         }
 
@@ -135,30 +151,40 @@ namespace Bifrostheim.Helpers
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                BifrostheimPlugin.Log?.LogDebug($"[ZNetHelper] Error in IsPlayerOnline: {ex.Message}");
+            }
             return false;
         }
 
-        public static (float health, float maxHealth, bool pvp, string zone, int daysSurvived) GetPlayerData(ZNetPeer peer)
+        public static int GetCurrentWorldDay()
+        {
+            try
+            {
+                if (EnvMan.instance != null && ZNet.instance != null)
+                {
+                    return EnvMan.instance.GetDay(ZNet.instance.GetTimeSeconds());
+                }
+                else if (ZNet.instance != null)
+                {
+                    return Math.Max(1, (int)(ZNet.instance.GetTimeSeconds() / 1200.0) + 1);
+                }
+            }
+            catch (Exception ex)
+            {
+                BifrostheimPlugin.Log?.LogDebug($"[ZNetHelper] Error calculating world day: {ex.Message}");
+            }
+            return 1;
+        }
+
+        public static (float health, float maxHealth, bool pvp, string zone, int daysSurvived) GetPlayerData(ZNetPeer peer, int? precalculatedDay = null)
         {
             float health = 25f;
             float maxHealth = 25f;
             bool pvp = false;
             string zone = "Meadows";
-            int daysSurvived = 1;
-
-            try
-            {
-                if (EnvMan.instance != null && ZNet.instance != null)
-                {
-                    daysSurvived = EnvMan.instance.GetDay(ZNet.instance.GetTimeSeconds());
-                }
-                else if (ZNet.instance != null)
-                {
-                    daysSurvived = Math.Max(1, (int)(ZNet.instance.GetTimeSeconds() / 1200.0) + 1);
-                }
-            }
-            catch { }
+            int daysSurvived = precalculatedDay ?? GetCurrentWorldDay();
 
             if (peer == null) return (health, maxHealth, pvp, zone, daysSurvived);
 
@@ -170,7 +196,10 @@ namespace Bifrostheim.Helpers
                     zone = WorldGenerator.instance.GetBiome(pos.x, pos.z).ToString();
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                BifrostheimPlugin.Log?.LogDebug($"[ZNetHelper] Error resolving player biome: {ex.Message}");
+            }
 
             try
             {
@@ -188,7 +217,10 @@ namespace Bifrostheim.Helpers
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                BifrostheimPlugin.Log?.LogDebug($"[ZNetHelper] Error reading player ZDO data: {ex.Message}");
+            }
 
             return (health, maxHealth, pvp, zone, daysSurvived);
         }
@@ -315,7 +347,6 @@ namespace Bifrostheim.Helpers
             string formattedMsg = $"<color=#FFCC00>[SERVER]</color> {cleanMsg}";
 
             // 1. Center Screen Banner Announcement (MessageHud.MessageType.Center = 2)
-            // MessageHud registers: Register<int, string>("ShowMessage", ...) on all Valheim clients
             try
             {
                 if (ZRoutedRpc.instance != null)
@@ -332,82 +363,23 @@ namespace Bifrostheim.Helpers
                 BifrostheimPlugin.Log?.LogWarning($"[ZNetHelper] ZRoutedRpc ShowMessage broadcast failed: {ex.Message}");
             }
 
-            // 2. Chat Box Broadcast (ChatMessage)
+            // 2. Chat Box Broadcast (ChatMessage to all players via ZRoutedRpc)
             try
             {
                 if (ZRoutedRpc.instance != null)
                 {
-                    // 4-parameter standard (pos, type, name, text)
-                    try
+                    ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.Everybody, "ChatMessage", new object[]
                     {
-                        ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.Everybody, "ChatMessage", new object[]
-                        {
-                            UnityEngine.Vector3.zero,
-                            (int)Talker.Type.Shout,
-                            "Server",
-                            cleanMsg
-                        });
-                    }
-                    catch { }
-
-                    // 5-parameter variant (pos, type, name, text, userinfo)
-                    try
-                    {
-                        ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.Everybody, "ChatMessage", new object[]
-                        {
-                            UnityEngine.Vector3.zero,
-                            (int)Talker.Type.Shout,
-                            "Server",
-                            cleanMsg,
-                            string.Empty
-                        });
-                    }
-                    catch { }
+                        UnityEngine.Vector3.zero,
+                        (int)Talker.Type.Shout,
+                        "Server",
+                        cleanMsg
+                    });
                 }
             }
             catch (Exception ex)
             {
                 BifrostheimPlugin.Log?.LogWarning($"[ZNetHelper] ZRoutedRpc ChatMessage broadcast failed: {ex.Message}");
-            }
-
-            // 3. Direct Peer RPC invocation for all active connections
-            try
-            {
-                if (ZNet.instance != null)
-                {
-                    var peers = GetPeers();
-                    foreach (var peer in peers)
-                    {
-                        if (peer?.m_rpc != null)
-                        {
-                            try
-                            {
-                                peer.m_rpc.Invoke("ShowMessage", new object[]
-                                {
-                                    (int)MessageHud.MessageType.Center,
-                                    formattedMsg
-                                });
-                            }
-                            catch { }
-
-                            try
-                            {
-                                peer.m_rpc.Invoke("ChatMessage", new object[]
-                                {
-                                    UnityEngine.Vector3.zero,
-                                    (int)Talker.Type.Shout,
-                                    "Server",
-                                    cleanMsg
-                                });
-                            }
-                            catch { }
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                BifrostheimPlugin.Log?.LogWarning($"[ZNetHelper] Direct peer broadcast failed: {ex.Message}");
             }
         }
     }

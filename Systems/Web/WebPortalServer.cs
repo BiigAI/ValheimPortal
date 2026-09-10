@@ -14,11 +14,16 @@ namespace Bifrostheim.Systems.Web
         private static CancellationTokenSource? _cts;
         private static byte[]? _embeddedIndexHtmlBytes;
         private static bool _isRunning;
-        public static string AdminPassword { get; private set; } = string.Empty;
+        private static readonly object _serverLock = new object();
+        internal static string AdminPassword { get; private set; } = string.Empty;
 
         public static void Start(int port, string password)
         {
-            if (_isRunning) return;
+            lock (_serverLock)
+            {
+                if (_isRunning) return;
+                _isRunning = true;
+            }
 
             AdminPassword = password ?? string.Empty;
             _cts = new CancellationTokenSource();
@@ -50,17 +55,21 @@ namespace Bifrostheim.Systems.Web
                         catch (Exception ex)
                         {
                             BifrostheimPlugin.Log.LogWarning($"[WebPortalServer] Could not bind prefix '{prefix}': {ex.Message}");
-                            try { _listener?.Close(); } catch { }
+                            try { _listener?.Close(); }
+                            catch (Exception closeEx)
+                            {
+                                BifrostheimPlugin.Log.LogDebug($"[WebPortalServer] Failed to close listener on prefix bind error: {closeEx.Message}");
+                            }
                         }
                     }
 
                     if (!started || _listener == null)
                     {
                         BifrostheimPlugin.Log.LogError($"[WebPortalServer] Failed to bind HTTP listener on port {port}.");
+                        lock (_serverLock) { _isRunning = false; }
                         return;
                     }
 
-                    _isRunning = true;
                     LoadEmbeddedAssets();
 
                     while (!_cts.Token.IsCancellationRequested && _listener.IsListening)
@@ -89,14 +98,30 @@ namespace Bifrostheim.Systems.Web
                 }
                 finally
                 {
-                    _isRunning = false;
+                    lock (_serverLock) { _isRunning = false; }
+                    try
+                    {
+                        if (_cts?.IsCancellationRequested == true || _listener?.IsListening == false)
+                        {
+                            _listener?.Stop();
+                            _listener?.Close();
+                        }
+                    }
+                    catch (Exception closeEx)
+                    {
+                        BifrostheimPlugin.Log.LogDebug($"[WebPortalServer] Error closing listener on exit: {closeEx.Message}");
+                    }
                 }
             });
         }
 
         public static void Stop()
         {
-            if (!_isRunning) return;
+            lock (_serverLock)
+            {
+                if (!_isRunning) return;
+                _isRunning = false;
+            }
 
             try
             {
@@ -108,10 +133,6 @@ namespace Bifrostheim.Systems.Web
             catch (Exception ex)
             {
                 BifrostheimPlugin.Log.LogWarning($"[WebPortalServer] Error stopping server: {ex.Message}");
-            }
-            finally
-            {
-                _isRunning = false;
             }
         }
 
@@ -125,10 +146,19 @@ namespace Bifrostheim.Systems.Web
                 // Handle CORS pre-flight
                 if (context.Request.HttpMethod.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
                 {
-                    context.Response.AddHeader("Access-Control-Allow-Origin", "*");
-                    context.Response.AddHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-                    context.Response.AddHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Password");
-                    context.Response.StatusCode = 204;
+                    string? origin = context.Request.Headers["Origin"];
+                    if (!string.IsNullOrEmpty(origin) && WebApiRouter.IsAllowedOrigin(origin, context.Request))
+                    {
+                        context.Response.AddHeader("Access-Control-Allow-Origin", origin);
+                        context.Response.AddHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+                        context.Response.AddHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Password");
+                        context.Response.AddHeader("Vary", "Origin");
+                        context.Response.StatusCode = 204;
+                    }
+                    else
+                    {
+                        context.Response.StatusCode = string.IsNullOrEmpty(origin) ? 204 : 403;
+                    }
                     context.Response.Close();
                     return;
                 }
@@ -141,6 +171,15 @@ namespace Bifrostheim.Systems.Web
 
                 await ServeStaticSpaAsync(context.Response);
             }
+            catch (HttpListenerException hEx) when (hEx.ErrorCode == 64 || hEx.ErrorCode == 1229)
+            {
+                // Client aborted connection or browser refreshed
+                BifrostheimPlugin.Log.LogDebug($"[WebPortalServer] Client disconnected: {hEx.Message}");
+            }
+            catch (IOException ioEx)
+            {
+                BifrostheimPlugin.Log.LogDebug($"[WebPortalServer] IO abort during request processing: {ioEx.Message}");
+            }
             catch (Exception ex)
             {
                 BifrostheimPlugin.Log.LogError($"[WebPortalServer] Error processing request: {ex}");
@@ -149,7 +188,10 @@ namespace Bifrostheim.Systems.Web
                     context.Response.StatusCode = 500;
                     context.Response.Close();
                 }
-                catch { }
+                catch (Exception closeEx)
+                {
+                    BifrostheimPlugin.Log.LogDebug($"[WebPortalServer] Failed to return 500 response: {closeEx.Message}");
+                }
             }
         }
 
@@ -230,15 +272,27 @@ namespace Bifrostheim.Systems.Web
         {
             var remoteAddress = request.RemoteEndPoint?.Address;
 
-            // Only trust X-Forwarded-For if the immediate connection is from a trusted local reverse proxy (e.g. Nginx, Caddy on loopback)
+            // Only trust proxy headers if the immediate connection is from a trusted local reverse proxy (e.g. Nginx, Caddy on loopback)
             if (remoteAddress != null && IPAddress.IsLoopback(remoteAddress))
             {
+                string? realIp = request.Headers["X-Real-IP"];
+                if (!string.IsNullOrWhiteSpace(realIp) && IPAddress.TryParse(realIp.Trim(), out _))
+                {
+                    return realIp.Trim();
+                }
+
                 string? forwarded = request.Headers["X-Forwarded-For"];
                 if (!string.IsNullOrWhiteSpace(forwarded))
                 {
                     string[] parts = forwarded.Split(',');
-                    if (parts.Length > 0 && !string.IsNullOrWhiteSpace(parts[0]))
-                        return parts[0].Trim();
+                    for (int i = parts.Length - 1; i >= 0; i--)
+                    {
+                        string candidate = parts[i].Trim();
+                        if (!string.IsNullOrWhiteSpace(candidate) && IPAddress.TryParse(candidate, out _))
+                        {
+                            return candidate;
+                        }
+                    }
                 }
             }
 

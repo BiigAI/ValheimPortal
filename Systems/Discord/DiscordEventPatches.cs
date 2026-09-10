@@ -13,7 +13,7 @@ namespace Bifrostheim.Systems.Discord
         private static Harmony? _harmony;
         private static readonly ConcurrentDictionary<string, DateTime> _sessionStartTimes = new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         private static readonly ConcurrentDictionary<string, float> _playerLastHealth = new ConcurrentDictionary<string, float>(StringComparer.OrdinalIgnoreCase);
-        private static readonly HashSet<string> _knownGlobalKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly ConcurrentDictionary<string, byte> _knownGlobalKeys = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
         private static RandomEvent? _activeRaid;
         private static string _activeRaidBiome = "";
         private static float _healthCheckTimer = 0f;
@@ -51,7 +51,10 @@ namespace Bifrostheim.Systems.Discord
                 _sessionStartTimes.Clear();
                 _playerLastHealth.Clear();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                BifrostheimPlugin.Log?.LogDebug($"[DiscordEventPatches] Failed to cleanly unpatch Harmony: {ex.Message}");
+            }
         }
 
         // ── 0. Server Ready Patch ─────────────────────────────────────────────────
@@ -172,7 +175,10 @@ namespace Bifrostheim.Systems.Discord
                     _playerLastHealth[trackingKey] = isDeadFlag ? 0f : currentHealth;
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                BifrostheimPlugin.Log?.LogDebug($"[DiscordEventPatches] Player health monitor error: {ex.Message}");
+            }
         }
 
         private static void EnsureSkaldReflection()
@@ -192,7 +198,10 @@ namespace Bifrostheim.Systems.Discord
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                BifrostheimPlugin.Log?.LogDebug($"[DiscordEventPatches] EnsureSkaldReflection error: {ex.Message}");
+            }
         }
 
         private static void HandlePlayerDeath(ZNetPeer peer)
@@ -210,7 +219,10 @@ namespace Bifrostheim.Systems.Discord
                         biome = WorldGenerator.instance.GetBiome(pos.x, pos.z).ToString();
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    BifrostheimPlugin.Log?.LogDebug($"[DiscordEventPatches] Biome resolve error on player death: {ex.Message}");
+                }
 
                 // Check Skald Chronicle if available (cached reflection)
                 string? killerName = null;
@@ -246,7 +258,10 @@ namespace Bifrostheim.Systems.Discord
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    BifrostheimPlugin.Log?.LogDebug($"[DiscordEventPatches] Error querying Skald kill feed: {ex.Message}");
+                }
 
                 DiscordWebhookDispatcher.OnPlayerDeath(victimName, biome, killerName, formattedLore);
             }
@@ -269,12 +284,15 @@ namespace Bifrostheim.Systems.Discord
                     {
                         if (!string.IsNullOrWhiteSpace(key))
                         {
-                            _knownGlobalKeys.Add(key.Trim().ToLowerInvariant());
+                            _knownGlobalKeys.TryAdd(key.Trim().ToLowerInvariant(), 0);
                         }
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                BifrostheimPlugin.Log?.LogDebug($"[DiscordEventPatches] Error caching initial global keys: {ex.Message}");
+            }
         }
 
         [HarmonyPatch(typeof(ZoneSystem), "SetGlobalKey", new[] { typeof(string) })]
@@ -286,8 +304,8 @@ namespace Bifrostheim.Systems.Discord
                 if (string.IsNullOrWhiteSpace(name)) return;
                 string key = name.Trim().ToLowerInvariant();
 
-                if (_knownGlobalKeys.Contains(key)) return;
-                _knownGlobalKeys.Add(key);
+                if (_knownGlobalKeys.ContainsKey(key)) return;
+                _knownGlobalKeys.TryAdd(key, 0);
 
                 string? bossName = null;
                 string biome = "Meadows";
@@ -329,7 +347,10 @@ namespace Bifrostheim.Systems.Discord
                         biome = WorldGenerator.instance.GetBiome(pos.x, pos.z).ToString();
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    BifrostheimPlugin.Log?.LogDebug($"[DiscordEventPatches] Failed to query raid biome from WorldGenerator: {ex.Message}");
+                }
 
                 string text = !string.IsNullOrWhiteSpace(ev.m_text) ? ev.m_text : ev.m_name;
                 _activeRaidBiome = biome;
@@ -363,19 +384,23 @@ namespace Bifrostheim.Systems.Discord
         }
 
         // ── 6. Chat Shout Relay Patch ─────────────────────────────────────────────
-        [HarmonyPatch(typeof(Chat), "OnNewChatMessage")]
+        [HarmonyPatch(typeof(Chat), "RPC_ChatMessage")]
         [HarmonyPostfix]
-        private static void OnNewChatMessagePostfix(GameObject go, long senderID, Vector3 pos, Talker.Type type, UserInfo user, string text)
+        private static void OnRpcChatMessagePostfix(long sender, Vector3 position, int type, UserInfo user, string text)
         {
             try
             {
-                if (type != Talker.Type.Shout) return;
+                if (type != (int)Talker.Type.Shout) return;
                 if (string.IsNullOrWhiteSpace(text)) return;
 
                 string senderName = user.Name ?? "";
-                if (string.IsNullOrWhiteSpace(senderName) && go != null)
+                if (string.IsNullOrWhiteSpace(senderName) && ZNet.instance != null)
                 {
-                    senderName = go.name.Replace("(Clone)", "").Trim();
+                    var peer = ZNet.instance.GetPeer(sender);
+                    if (peer != null && !string.IsNullOrWhiteSpace(peer.m_playerName))
+                    {
+                        senderName = peer.m_playerName.Trim();
+                    }
                 }
 
                 if (string.IsNullOrWhiteSpace(senderName) || string.Equals(senderName, "Server", StringComparison.OrdinalIgnoreCase))
@@ -383,7 +408,10 @@ namespace Bifrostheim.Systems.Discord
 
                 DiscordWebhookDispatcher.OnChatShout(senderName, text.Trim());
             }
-            catch { }
+            catch (Exception ex)
+            {
+                BifrostheimPlugin.Log?.LogDebug($"[DiscordEventPatches] Error in Chat shout patch: {ex.Message}");
+            }
         }
     }
 }

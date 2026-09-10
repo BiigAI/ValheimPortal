@@ -22,7 +22,7 @@ namespace Bifrostheim
 
         public static ConfigEntry<bool> EnableWebPortal = null!;
         public static ConfigEntry<int> WebPortalPort = null!;
-        public static ConfigEntry<string> WebAdminPassword = null!;
+        internal static ConfigEntry<string> WebAdminPassword = null!;
         public static ConfigEntry<bool> VerboseLogging = null!;
         public static ConfigEntry<float> PlayerHealthPollInterval = null!;
         public static ConfigEntry<string> LifecycleRestartMode = null!;
@@ -50,6 +50,7 @@ namespace Bifrostheim
         public static int CurrentFps { get; private set; } = 60;
         private static float _fpsAccumulator = 60f;
         private static bool _isClient;
+        private static BepInExLogListener? _logListener;
 
         private void Awake()
         {
@@ -113,7 +114,8 @@ namespace Bifrostheim
 
                 // Initialize player helpers and log listener
                 ConfigSyncManager.OnlinePlayerChecker = ZNetHelper.IsPlayerOnline;
-                BepInEx.Logging.Logger.Listeners.Add(new BepInExLogListener());
+                _logListener = new BepInExLogListener();
+                BepInEx.Logging.Logger.Listeners.Add(_logListener);
 
                 // Initialize Discord dispatcher & event patches
                 DiscordWebhookDispatcher.Initialize();
@@ -159,21 +161,42 @@ namespace Bifrostheim
             DiscordEventPatches.RemovePatches();
             DiscordWebhookDispatcher.Shutdown();
             WebPortalServer.Stop();
+
+            if (_logListener != null)
+            {
+                BepInEx.Logging.Logger.Listeners.Remove(_logListener);
+                _logListener.Dispose();
+                _logListener = null;
+            }
+
             Log.LogInfo($"[{PluginName}] Unloaded.");
         }
 
         private static string GenerateRandomPassword(int length = 16)
         {
             const string chars = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-            var bytes = new byte[length];
+            int maxUsable = (256 / chars.Length) * chars.Length; // 224: eliminates modulo bias
+            var result = new char[length];
+            byte[] buffer = new byte[length * 2];
+            int bufferIndex = buffer.Length;
+
             using (var rng = RandomNumberGenerator.Create())
             {
-                rng.GetBytes(bytes);
-            }
-            var result = new char[length];
-            for (int i = 0; i < length; i++)
-            {
-                result[i] = chars[bytes[i] % chars.Length];
+                for (int i = 0; i < length; i++)
+                {
+                    byte b;
+                    do
+                    {
+                        if (bufferIndex >= buffer.Length)
+                        {
+                            rng.GetBytes(buffer);
+                            bufferIndex = 0;
+                        }
+                        b = buffer[bufferIndex++];
+                    } while (b >= maxUsable);
+
+                    result[i] = chars[b % chars.Length];
+                }
             }
             return new string(result);
         }

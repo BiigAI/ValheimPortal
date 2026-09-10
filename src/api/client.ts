@@ -201,7 +201,7 @@ export const AUTH_STORAGE_KEY = 'bigfrost_auth';
 
 function getAuthHeaders(): Record<string, string> {
   const token = sessionStorage.getItem(AUTH_STORAGE_KEY) || sessionStorage.getItem('bifrostheim_auth');
-  return token ? { 'X-Admin-Password': token } : {};
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {

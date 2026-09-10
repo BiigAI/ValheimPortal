@@ -26,40 +26,48 @@ namespace Bifrostheim.Helpers
         {
             if (string.IsNullOrWhiteSpace(json)) return default;
 
-            object? parsed = Deserialize(json);
-            if (parsed == null) return default;
-
-            if (parsed is T direct) return direct;
-
-            if (typeof(IDictionary).IsAssignableFrom(typeof(T)) && parsed is IDictionary<string, object?> dict)
+            try
             {
-                Type[] genArgs = typeof(T).GetGenericArguments();
-                if (genArgs.Length == 2 && genArgs[0] == typeof(string))
+                object? parsed = Deserialize(json);
+                if (parsed == null) return default;
+
+                if (parsed is T direct) return direct;
+
+                if (typeof(IDictionary).IsAssignableFrom(typeof(T)) && parsed is IDictionary<string, object?> dict)
                 {
-                    Type valType = genArgs[1];
-                    var resultDict = (IDictionary)Activator.CreateInstance(typeof(T))!;
-                    foreach (var kvp in dict)
+                    Type[] genArgs = typeof(T).GetGenericArguments();
+                    if (genArgs.Length == 2 && genArgs[0] == typeof(string))
                     {
-                        if (kvp.Value is IDictionary<string, object?> childDict)
+                        Type valType = genArgs[1];
+                        var resultDict = (IDictionary)Activator.CreateInstance(typeof(T))!;
+                        foreach (var kvp in dict)
                         {
-                            object childObj = ConvertDictionaryToObject(childDict, valType);
-                            resultDict.Add(kvp.Key, childObj);
+                            if (kvp.Value is IDictionary<string, object?> childDict)
+                            {
+                                object childObj = ConvertDictionaryToObject(childDict, valType);
+                                resultDict.Add(kvp.Key, childObj);
+                            }
+                            else
+                            {
+                                resultDict.Add(kvp.Key, ConvertValue(kvp.Value, valType));
+                            }
                         }
-                        else
-                        {
-                            resultDict.Add(kvp.Key, ConvertValue(kvp.Value, valType));
-                        }
+                        return (T)resultDict;
                     }
-                    return (T)resultDict;
                 }
-            }
 
-            if (parsed is IDictionary<string, object?> objDict)
+                if (parsed is IDictionary<string, object?> objDict)
+                {
+                    return (T)ConvertDictionaryToObject(objDict, typeof(T));
+                }
+
+                return default;
+            }
+            catch (Exception ex)
             {
-                return (T)ConvertDictionaryToObject(objDict, typeof(T));
+                BifrostheimPlugin.Log?.LogDebug($"[SimpleJson] JSON deserialization failed: {ex.Message}");
+                return default;
             }
-
-            return default;
         }
 
         private static object ConvertDictionaryToObject(IDictionary<string, object?> dict, Type targetType)
@@ -339,7 +347,7 @@ namespace Bifrostheim.Helpers
             if (c == 'n') return ParseNull(json, ref index);
             if (char.IsDigit(c) || c == '-') return ParseNumber(json, ref index);
 
-            return null;
+            throw new FormatException($"Invalid JSON token '{c}' at position {index}.");
         }
 
         private static Dictionary<string, object?> ParseObject(string json, ref int index)
@@ -435,27 +443,27 @@ namespace Bifrostheim.Helpers
 
         private static bool ParseBool(string json, ref int index)
         {
-            if (json.Substring(index).StartsWith("true", StringComparison.OrdinalIgnoreCase))
+            if (index + 4 <= json.Length && string.Compare(json, index, "true", 0, 4, StringComparison.OrdinalIgnoreCase) == 0)
             {
                 index += 4;
                 return true;
             }
-            if (json.Substring(index).StartsWith("false", StringComparison.OrdinalIgnoreCase))
+            if (index + 5 <= json.Length && string.Compare(json, index, "false", 0, 5, StringComparison.OrdinalIgnoreCase) == 0)
             {
                 index += 5;
                 return false;
             }
-            index++;
-            return false;
+            throw new FormatException($"Expected boolean literal at position {index}.");
         }
 
         private static object? ParseNull(string json, ref int index)
         {
-            if (json.Substring(index).StartsWith("null", StringComparison.OrdinalIgnoreCase))
+            if (index + 4 <= json.Length && string.Compare(json, index, "null", 0, 4, StringComparison.OrdinalIgnoreCase) == 0)
             {
                 index += 4;
+                return null;
             }
-            return null;
+            throw new FormatException($"Expected 'null' literal at position {index}.");
         }
 
         private static object ParseNumber(string json, ref int index)
