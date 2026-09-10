@@ -14,6 +14,7 @@ import { useToast } from '../context/ToastContext';
 import { api, type ValgrindConfig } from '../api/client';
 import { useTabMode } from '../hooks/useTabMode';
 import ModHeader from '../components/ui/ModHeader';
+import KpiGaugeCard from '../components/ui/KpiGaugeCard';
 import SettingsCard from '../components/ui/SettingsCard';
 import SettingRow from '../components/ui/SettingRow';
 import SliderField from '../components/ui/SliderField';
@@ -149,8 +150,8 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
 
   const presets = [
     {
-      name: 'Valgrind Default',
-      desc: '8% -> 1% (Dynamic)',
+      name: 'Dynamic Protection (Default)',
+      desc: '8% -> 5% -> 2.5% -> 1%',
       isActive:
         calculationMode === 'TieredBrackets' &&
         earlyGameLossPercent === 8.0 &&
@@ -159,7 +160,7 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
         endgameLossPercent === 1.0,
       onClick: () =>
         applyPreset({
-          name: 'Valgrind Default',
+          name: 'Dynamic Protection',
           mode: 'TieredBrackets',
           early: 8.0,
           mid: 5.0,
@@ -168,8 +169,8 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
         }),
     },
     {
-      name: 'Vanilla Valheim',
-      desc: 'Flat 5.0% (Unforgiving)',
+      name: 'Vanilla Valheim (Flat 5%)',
+      desc: 'Uniform 5% loss across all levels',
       isActive:
         calculationMode === 'TieredBrackets' &&
         earlyGameLossPercent === 5.0 &&
@@ -203,7 +204,7 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
     },
     {
       name: 'Per-Skill Tiered',
-      desc: 'Evaluates each skill',
+      desc: 'Evaluates each skill independently',
       isActive: calculationMode === 'PerSkill',
       onClick: () =>
         applyPreset({
@@ -252,13 +253,17 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
     },
   ];
 
+  const currentNoviceLoss =
+    calculationMode === 'ContinuousCurve' ? curveMaxLossPercent : earlyGameLossPercent;
+  const currentMasterLoss =
+    calculationMode === 'ContinuousCurve' ? curveMinLossPercent : endgameLossPercent;
+
   return (
-    <div className="space-y-6 w-full">
-      {/* Unified Mod Header */}
+    <div className="space-y-6 pb-12">
+      {/* ── 1. Top Hero Header ── */}
       <ModHeader
         icon={FiSliders}
         title="Valgrind Dynamic Death Penalty"
-        description="Control dynamic skill loss formulas, bracket tiers, and master-level protection upon death."
         mode={mode}
         onModeChange={setMode}
         tabId="valgrind"
@@ -269,20 +274,43 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
         isSaving={isSaving}
       />
 
-      {/* Mode Presets Card */}
+      {/* ── 2. Top Visual Telemetry Gauges (Real Loss Rates) ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <KpiGaugeCard
+          icon={FiTrendingDown}
+          label="Novice Skill Loss"
+          value={`${currentNoviceLoss.toFixed(1)}%`}
+          unit="Deduction"
+          progressPercent={Math.min(100, (currentNoviceLoss / 25) * 100)}
+          progressGradient="from-orange-500 to-rose-500"
+          accentColor="orange"
+        />
+
+        <KpiGaugeCard
+          icon={FiShield}
+          label="Master Protection Floor"
+          value={`${currentMasterLoss.toFixed(1)}%`}
+          unit="Deduction"
+          progressPercent={Math.min(100, (currentMasterLoss / 25) * 100)}
+          progressGradient="from-emerald-500 to-teal-400"
+          accentColor="orange"
+        />
+      </div>
+
+      {/* ── 3. Mode Presets Grid ── */}
       <SettingsCard
         title="Configuration Presets"
-        subtitle="Quickly load tested skill loss penalty presets"
+        subtitle="Quickly load battle-tested death penalty presets"
         icon={FiShield}
         accentColor="orange"
       >
         <PresetGrid presets={presets} accentColor="orange" />
       </SettingsCard>
 
-      {/* Main Calculation Mode Selection */}
+      {/* ── 4. Calculation Mode Selection ── */}
       <SettingsCard
-        title="Calculation Mode"
-        subtitle="Choose the mathematical model applied when calculating skill deductions on death"
+        title="Mathematical Calculation Model"
+        subtitle="Choose how Valheim determines skill deductions when a player dies"
         icon={FiLayers}
         accentColor="orange"
       >
@@ -317,7 +345,7 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
                 key={m.id}
                 type="button"
                 onClick={() => setCalculationMode(m.id)}
-                className={`p-5 rounded-xl text-left border transition-all flex flex-col justify-between group ${
+                className={`p-5 rounded-2xl text-left border transition-all flex flex-col justify-between group ${
                   isSelected
                     ? 'bg-orange-500/10 border-orange-500/50 shadow-[0_0_20px_rgba(249,115,22,0.15)] ring-1 ring-orange-500/30'
                     : 'bg-gray-950/60 border-gray-800 hover:border-gray-700 hover:bg-gray-900/60'
@@ -327,10 +355,10 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center space-x-2.5">
                       <div
-                        className={`p-2 rounded-lg ${
+                        className={`p-2.5 rounded-xl border ${
                           isSelected
-                            ? 'bg-orange-500/20 text-orange-400'
-                            : 'bg-gray-900 text-gray-400 group-hover:text-gray-300'
+                            ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
+                            : 'bg-gray-900 text-gray-400 border-gray-800 group-hover:text-gray-300'
                         }`}
                       >
                         <Icon size={18} />
@@ -344,13 +372,13 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
                       </span>
                     </div>
                     {isSelected && (
-                      <FiCheck className="text-orange-400 text-base flex-shrink-0" />
+                      <FiCheck className="text-orange-400 text-base shrink-0" />
                     )}
                   </div>
                   <p className="text-xs text-gray-400 leading-relaxed">{m.desc}</p>
                 </div>
                 <div className="mt-4 pt-3 border-t border-gray-800/80">
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-gray-900 text-gray-400 border border-gray-800">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-gray-900 text-gray-400 border border-gray-800">
                     {m.badge}
                   </span>
                 </div>
@@ -360,7 +388,7 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
         </div>
 
         {/* Live Simulation Matrix */}
-        <div className="p-4 sm:p-5 bg-gray-950/90 border border-gray-800 rounded-xl space-y-3 mt-4">
+        <div className="p-4 sm:p-5 bg-gray-950/90 border border-gray-800 rounded-2xl space-y-3 mt-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-orange-300 font-mono uppercase tracking-wider flex items-center space-x-1.5">
               <FiInfo className="text-orange-400" />
@@ -381,7 +409,7 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
               return (
                 <div
                   key={sample.level}
-                  className="p-3 bg-gray-900/90 border border-gray-800/90 rounded-lg text-center font-mono"
+                  className="p-3.5 bg-gray-900/80 border border-gray-800/90 rounded-xl text-center font-mono shadow-sm"
                 >
                   <div className="text-[11px] text-gray-400">
                     {sample.label} (Lvl {sample.level})
@@ -399,7 +427,7 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
         </div>
       </SettingsCard>
 
-      {/* Advanced Mode Granular Controls */}
+      {/* ── 5. Advanced Mode Granular Controls ── */}
       <AnimatePresence>
         {mode === 'advanced' && (
           <motion.div
@@ -410,8 +438,7 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
             className="space-y-6 overflow-hidden"
           >
             {/* Mode-Specific Parameters */}
-            {(calculationMode === 'TieredBrackets' ||
-              calculationMode === 'PerSkill') && (
+            {(calculationMode === 'TieredBrackets' || calculationMode === 'PerSkill') && (
               <SettingsCard
                 title="Tiered Brackets Fine-Tuning"
                 subtitle="Configure skill loss percentage applied at each progression bracket"
@@ -426,15 +453,16 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
                     min={0}
                     max={25}
                     step={0.5}
+                    vanillaDefault={5.0}
                     disabled={isLoading}
                     onChange={setEarlyGameLossPercent}
                     formatValue={(v) => `${v.toFixed(1)}%`}
                     accentColor="orange"
                     ticks={[
-                      { label: '0% (Safe)' },
-                      { label: '5% (Vanilla)' },
-                      { label: '8% (Default)' },
-                      { label: '25% (Brutal)' },
+                      { label: '0%', value: 0 },
+                      { label: '5% (Vanilla)', value: 5.0 },
+                      { label: '15%', value: 15.0 },
+                      { label: '25%', value: 25.0 },
                     ]}
                   />
 
@@ -445,14 +473,16 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
                     min={0}
                     max={25}
                     step={0.5}
+                    vanillaDefault={5.0}
                     disabled={isLoading}
                     onChange={setMidGameLossPercent}
                     formatValue={(v) => `${v.toFixed(1)}%`}
                     accentColor="orange"
                     ticks={[
-                      { label: '0% (Safe)' },
-                      { label: '5% (Default)' },
-                      { label: '25% (Brutal)' },
+                      { label: '0%', value: 0 },
+                      { label: '5% (Vanilla)', value: 5.0 },
+                      { label: '15%', value: 15.0 },
+                      { label: '25%', value: 25.0 },
                     ]}
                   />
 
@@ -463,15 +493,16 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
                     min={0}
                     max={25}
                     step={0.5}
+                    vanillaDefault={5.0}
                     disabled={isLoading}
                     onChange={setLateGameLossPercent}
                     formatValue={(v) => `${v.toFixed(1)}%`}
                     accentColor="orange"
                     ticks={[
-                      { label: '0% (Safe)' },
-                      { label: '2.5% (Default)' },
-                      { label: '5% (Vanilla)' },
-                      { label: '25% (Brutal)' },
+                      { label: '0%', value: 0 },
+                      { label: '5% (Vanilla)', value: 5.0 },
+                      { label: '15%', value: 15.0 },
+                      { label: '25%', value: 25.0 },
                     ]}
                   />
 
@@ -482,15 +513,16 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
                     min={0}
                     max={25}
                     step={0.5}
+                    vanillaDefault={5.0}
                     disabled={isLoading}
                     onChange={setEndgameLossPercent}
                     formatValue={(v) => `${v.toFixed(1)}%`}
                     accentColor="orange"
                     ticks={[
-                      { label: '0% (Safe)' },
-                      { label: '1.0% (Default)' },
-                      { label: '5% (Vanilla)' },
-                      { label: '25% (Brutal)' },
+                      { label: '0%', value: 0 },
+                      { label: '5% (Vanilla)', value: 5.0 },
+                      { label: '15%', value: 15.0 },
+                      { label: '25%', value: 25.0 },
                     ]}
                   />
                 </div>
@@ -512,15 +544,16 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
                     min={0}
                     max={25}
                     step={0.5}
+                    vanillaDefault={5.0}
                     disabled={isLoading}
                     onChange={setCurveMaxLossPercent}
                     formatValue={(v) => `${v.toFixed(1)}%`}
                     accentColor="orange"
                     ticks={[
-                      { label: '0.0%' },
-                      { label: '5.0% (Vanilla)' },
-                      { label: '8.0% (Default)' },
-                      { label: '25.0%' },
+                      { label: '0%', value: 0 },
+                      { label: '5% (Vanilla)', value: 5.0 },
+                      { label: '15%', value: 15.0 },
+                      { label: '25%', value: 25.0 },
                     ]}
                   />
 
@@ -531,15 +564,16 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
                     min={0}
                     max={25}
                     step={0.5}
+                    vanillaDefault={5.0}
                     disabled={isLoading}
                     onChange={setCurveMinLossPercent}
                     formatValue={(v) => `${v.toFixed(1)}%`}
                     accentColor="orange"
                     ticks={[
-                      { label: '0.0%' },
-                      { label: '1.0% (Default)' },
-                      { label: '5.0% (Vanilla)' },
-                      { label: '25.0%' },
+                      { label: '0%', value: 0 },
+                      { label: '5% (Vanilla)', value: 5.0 },
+                      { label: '15%', value: 15.0 },
+                      { label: '25%', value: 25.0 },
                     ]}
                   />
                 </div>
@@ -561,11 +595,10 @@ export default function ValgrindTab({ onSaved }: ValgrindTabProps = {}) {
                         Use Top N Skills Only for Average
                       </span>
                       <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">
-                        Averages only the player&apos;s top highest skills (reflecting
-                        their active build) rather than all discovered skills.
+                        Averages only the player&apos;s top highest skills (reflecting their active build) rather than all discovered skills.
                       </p>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer flex-shrink-0 ml-4">
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-4">
                       <input
                         type="checkbox"
                         checked={useTopNSkillsOnly}

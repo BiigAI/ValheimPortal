@@ -14,6 +14,7 @@ import ReconnectingOverlay from './components/ReconnectingOverlay';
 import SettingsModal from './components/SettingsModal';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { HeaderActionsProvider, useHeaderActions } from './context/HeaderActionsContext';
 import { api, type PendingConfigChange, type ScheduledRestartInfo } from './api/client';
 
 const THUNDERSTORE_BASE = 'https://thunderstore.io/c/valheim/p/BigAI';
@@ -38,6 +39,7 @@ function MainLayout({ onLogout }: { onLogout: () => void }) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const failCountRef = useRef(0);
   const { showToast } = useToast();
+  const { headerActions } = useHeaderActions();
 
   const fetchRestartStatus = useCallback(() => {
     api.getRestartStatus()
@@ -126,7 +128,7 @@ function MainLayout({ onLogout }: { onLogout: () => void }) {
               <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-orange-400 via-amber-300 to-yellow-200 tracking-tight">
                 Bigfrost
               </h1>
-              <p className="text-xs text-gray-400 font-mono tracking-wide">v1.0.2 • Dedicated</p>
+              <p className="text-xs text-gray-400 font-mono tracking-wide">v1.1.0 • Dedicated</p>
             </div>
           </div>
         </div>
@@ -223,10 +225,18 @@ function MainLayout({ onLogout }: { onLogout: () => void }) {
       <main className="flex-1 relative flex flex-col h-full bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-gray-900 via-gray-950 to-black overflow-hidden">
         {/* Top Header */}
         <header className="h-16 border-b border-gray-800/60 backdrop-blur-xl bg-gray-950/60 flex items-center justify-between px-8 z-10 shrink-0">
-          <div className="flex items-center space-x-3">
-            <h2 className="text-xl font-bold text-gray-100 tracking-tight">
+          <div className="flex items-center space-x-4 min-w-0">
+            <h2 className="text-xl font-bold text-gray-100 tracking-tight shrink-0">
               {tabs.find(t => t.id === activeTab)?.label}
             </h2>
+            {headerActions && (
+              <>
+                <div className="h-4 w-px bg-gray-800 shrink-0" />
+                <div className="flex items-center space-x-2 shrink-0">
+                  {headerActions}
+                </div>
+              </>
+            )}
           </div>
 
           <div className="flex items-center space-x-4">
@@ -377,7 +387,9 @@ export default function App() {
   return (
     <AuthProvider>
       <ToastProvider>
-        <AppContent />
+        <HeaderActionsProvider>
+          <AppContent />
+        </HeaderActionsProvider>
       </ToastProvider>
     </AuthProvider>
   );

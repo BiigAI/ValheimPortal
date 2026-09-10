@@ -32,6 +32,7 @@ import {
   type ConsoleLogEntry,
   type DiscordConfig,
 } from '../api/client';
+import KpiGaugeCard from '../components/ui/KpiGaugeCard';
 
 interface DashboardTabProps {
   onOpenSettings?: () => void;
@@ -335,7 +336,6 @@ export default function DashboardTab({ onOpenSettings }: DashboardTabProps = {})
 
   const playerCapacityPercent = Math.min(100, Math.round((telemetry.onlineCount / (telemetry.maxPlayers || 10)) * 100));
   const memoryUtilizationPercent = Math.min(100, Math.round((telemetry.memoryMb / 4096) * 100));
-  const isFpsOptimal = telemetry.fps >= 50;
 
   return (
     <div className="space-y-6 pb-12">
@@ -357,13 +357,11 @@ export default function DashboardTab({ onOpenSettings }: DashboardTabProps = {})
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-400 mt-1 font-mono">
-                <span>Realm: <strong className="text-gray-200">10th World</strong></span>
-                <span>•</span>
                 <span>Uptime: <strong className="text-gray-200">{telemetry.uptime}</strong></span>
                 <span>•</span>
                 <span>Game Port: <strong className="text-gray-200">2456</strong></span>
                 <span>•</span>
-                <span>Portal: <strong className="text-gray-200">v1.0.2</strong></span>
+                <span>Portal: <strong className="text-gray-200">v1.1.0</strong></span>
               </div>
             </div>
           </div>
@@ -394,139 +392,45 @@ export default function DashboardTab({ onOpenSettings }: DashboardTabProps = {})
 
       {/* ── 2. Top Visual Telemetry Gauges (4 Cards) ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Active Vikings */}
-        <div className="bg-gray-900/60 backdrop-blur-md border border-gray-800/80 rounded-2xl p-5 shadow-xl flex flex-col justify-between space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-400 flex items-center space-x-2">
-              <FiUsers className="text-orange-400 text-sm" />
-              <span>Active Vikings</span>
-            </span>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-300 border border-orange-500/20">
-              {playerCapacityPercent}% Full
-            </span>
-          </div>
+        <KpiGaugeCard
+          icon={FiUsers}
+          label="Active Vikings"
+          value={telemetry.onlineCount}
+          unit={`/ ${telemetry.maxPlayers} slots`}
+          progressPercent={playerCapacityPercent}
+          progressGradient="from-orange-500 to-amber-400"
+          accentColor="orange"
+        />
 
-          <div>
-            <div className="flex items-baseline space-x-2">
-              <span className="text-3xl font-extrabold text-gray-100 font-mono tracking-tight">
-                {telemetry.onlineCount}
-              </span>
-              <span className="text-xs text-gray-500 font-mono font-medium">/ {telemetry.maxPlayers} slots</span>
-            </div>
+        <KpiGaugeCard
+          icon={FiCpu}
+          label="Tickrate & FPS"
+          value={telemetry.fps.toFixed(1)}
+          unit={`FPS (${telemetry.tickRate})`}
+          progressPercent={Math.min(100, (telemetry.fps / 60) * 100)}
+          progressGradient="from-emerald-500 to-teal-400"
+          accentColor="emerald"
+        />
 
-            {/* Capacity Meter Bar */}
-            <div className="w-full h-2 bg-gray-950 rounded-full mt-2.5 overflow-hidden border border-gray-800">
-              <div
-                className="h-full bg-gradient-to-r from-orange-500 to-amber-400 rounded-full transition-all duration-500"
-                style={{ width: `${playerCapacityPercent}%` }}
-              />
-            </div>
-          </div>
+        <KpiGaugeCard
+          icon={FiActivity}
+          label="RAM Footprint"
+          value={telemetry.memoryMb.toLocaleString()}
+          unit="MB"
+          progressPercent={memoryUtilizationPercent}
+          progressGradient="from-cyan-500 to-blue-500"
+          accentColor="cyan"
+        />
 
-          <p className="text-[11px] text-gray-400 font-medium">Warriors actively connected to server</p>
-        </div>
-
-        {/* Card 2: Server Performance & FPS */}
-        <div className="bg-gray-900/60 backdrop-blur-md border border-gray-800/80 rounded-2xl p-5 shadow-xl flex flex-col justify-between space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-400 flex items-center space-x-2">
-              <FiCpu className="text-emerald-400 text-sm" />
-              <span>Tickrate & FPS</span>
-            </span>
-            <span
-              className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
-                isFpsOptimal
-                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                  : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-              }`}
-            >
-              {isFpsOptimal ? 'Smooth & Stable' : 'Heavy Load'}
-            </span>
-          </div>
-
-          <div>
-            <div className="flex items-baseline space-x-2">
-              <span className="text-3xl font-extrabold text-gray-100 font-mono tracking-tight">
-                {telemetry.fps.toFixed(1)}
-              </span>
-              <span className="text-xs text-gray-500 font-mono font-medium">FPS ({telemetry.tickRate})</span>
-            </div>
-
-            {/* Simulated FPS stability bar */}
-            <div className="w-full h-2 bg-gray-950 rounded-full mt-2.5 overflow-hidden border border-gray-800">
-              <div
-                className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-500"
-                style={{ width: `${Math.min(100, (telemetry.fps / 60) * 100)}%` }}
-              />
-            </div>
-          </div>
-
-          <p className="text-[11px] text-gray-400 font-medium">Physics & simulation frame delivery</p>
-        </div>
-
-        {/* Card 3: Memory Footprint */}
-        <div className="bg-gray-900/60 backdrop-blur-md border border-gray-800/80 rounded-2xl p-5 shadow-xl flex flex-col justify-between space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-400 flex items-center space-x-2">
-              <FiActivity className="text-cyan-400 text-sm" />
-              <span>RAM Footprint</span>
-            </span>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
-              {memoryUtilizationPercent}% of 4GB
-            </span>
-          </div>
-
-          <div>
-            <div className="flex items-baseline space-x-2">
-              <span className="text-3xl font-extrabold text-gray-100 font-mono tracking-tight">
-                {telemetry.memoryMb.toLocaleString()}
-              </span>
-              <span className="text-xs text-gray-500 font-mono font-medium">MB</span>
-            </div>
-
-            {/* RAM threshold bar */}
-            <div className="w-full h-2 bg-gray-950 rounded-full mt-2.5 overflow-hidden border border-gray-800">
-              <div
-                className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full transition-all duration-500"
-                style={{ width: `${memoryUtilizationPercent}%` }}
-              />
-            </div>
-          </div>
-
-          <p className="text-[11px] text-gray-400 font-medium">Physical process RAM (Working Set)</p>
-        </div>
-
-        {/* Card 4: Networked ZDO Complexity */}
-        <div className="bg-gray-900/60 backdrop-blur-md border border-gray-800/80 rounded-2xl p-5 shadow-xl flex flex-col justify-between space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-400 flex items-center space-x-2">
-              <FiServer className="text-purple-400 text-sm" />
-              <span>World ZDOs</span>
-            </span>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20">
-              Optimal State
-            </span>
-          </div>
-
-          <div>
-            <div className="flex items-baseline space-x-2">
-              <span className="text-3xl font-extrabold text-gray-100 font-mono tracking-tight">
-                {telemetry.activeZdos.toLocaleString()}
-              </span>
-              <span className="text-xs text-gray-500 font-mono font-medium">Entities</span>
-            </div>
-
-            {/* ZDO Complexity meter */}
-            <div className="w-full h-2 bg-gray-950 rounded-full mt-2.5 overflow-hidden border border-gray-800">
-              <div
-                className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full transition-all duration-500"
-                style={{ width: `${Math.min(100, (telemetry.activeZdos / 60000) * 100)}%` }}
-              />
-            </div>
-          </div>
-
-          <p className="text-[11px] text-gray-400 font-medium">Networked items, monsters & structures</p>
-        </div>
+        <KpiGaugeCard
+          icon={FiServer}
+          label="World ZDOs"
+          value={telemetry.activeZdos.toLocaleString()}
+          unit="Entities"
+          progressPercent={Math.min(100, (telemetry.activeZdos / 60000) * 100)}
+          progressGradient="from-purple-500 to-indigo-500"
+          accentColor="indigo"
+        />
       </div>
 
       {/* ── 3. Middle Split Command Center ── */}
@@ -767,7 +671,7 @@ export default function DashboardTab({ onOpenSettings }: DashboardTabProps = {})
                 className="w-full flex items-center justify-center space-x-2 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-orange-500/20 disabled:opacity-50"
               >
                 <FiSend size={13} />
-                <span>{isBroadcasting ? 'Broadcasting...' : 'Broadcast to 10th World'}</span>
+                <span>{isBroadcasting ? 'Broadcasting...' : 'Broadcast to Server'}</span>
               </button>
             </form>
           </div>

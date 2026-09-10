@@ -1,16 +1,19 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { type IconType } from 'react-icons';
 import { FiRefreshCw, FiCheck, FiLoader } from 'react-icons/fi';
 import SimpleAdvancedToggle, { type ModeType } from './SimpleAdvancedToggle';
+import { useHeaderActions } from '../../context/HeaderActionsContext';
 
-interface ModHeaderProps {
-  icon: IconType;
-  title: string;
-  description: string;
+export interface ModHeaderProps {
+  icon?: IconType;
+  title?: string;
+  description?: string;
   mode?: ModeType;
   onModeChange?: (mode: ModeType) => void;
   tabId?: string;
   accentColor?: 'orange' | 'amber' | 'cyan' | 'red' | 'indigo' | 'emerald';
+  statusBadge?: string;
+  metadata?: Array<{ label: string; value: React.ReactNode }>;
   onRefresh?: () => void;
   isRefreshing?: boolean;
   onSave?: () => void;
@@ -21,35 +24,38 @@ interface ModHeaderProps {
 
 const accentGradients = {
   orange: {
-    iconBg: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
+    ambient: 'bg-orange-500/5',
+    iconBox: 'from-orange-500/20 via-amber-500/10 to-transparent border-orange-500/30 text-orange-400',
     saveBtn: 'bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 shadow-orange-500/25',
   },
   amber: {
-    iconBg: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+    ambient: 'bg-amber-500/5',
+    iconBox: 'from-amber-500/20 via-orange-500/10 to-transparent border-amber-500/30 text-amber-400',
     saveBtn: 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-amber-500/25',
   },
   cyan: {
-    iconBg: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+    ambient: 'bg-cyan-500/5',
+    iconBox: 'from-cyan-500/20 via-blue-500/10 to-transparent border-cyan-500/30 text-cyan-400',
     saveBtn: 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 shadow-cyan-600/25',
   },
   red: {
-    iconBg: 'bg-red-500/10 text-red-400 border-red-500/20',
-    saveBtn: 'bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 shadow-red-600/25',
+    ambient: 'bg-red-500/5',
+    iconBox: 'from-red-500/20 via-rose-500/10 to-transparent border-red-500/30 text-red-400',
+    saveBtn: 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 shadow-red-600/25',
   },
   indigo: {
-    iconBg: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
+    ambient: 'bg-indigo-500/5',
+    iconBox: 'from-indigo-500/20 via-purple-500/10 to-transparent border-indigo-500/30 text-indigo-400',
     saveBtn: 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 shadow-indigo-600/25',
   },
   emerald: {
-    iconBg: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+    ambient: 'bg-emerald-500/5',
+    iconBox: 'from-emerald-500/20 via-teal-500/10 to-transparent border-emerald-500/30 text-emerald-400',
     saveBtn: 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-emerald-600/25',
   },
 };
 
 export default function ModHeader({
-  icon: Icon,
-  title,
-  description,
   mode,
   onModeChange,
   tabId = 'mod',
@@ -62,26 +68,16 @@ export default function ModHeader({
   children,
 }: ModHeaderProps) {
   const styles = accentGradients[accentColor] || accentGradients.orange;
+  const { setHeaderActions, registerSaveHandler } = useHeaderActions();
 
-  return (
-    <div className="bg-gray-900/60 backdrop-blur-md border border-gray-800/80 p-5 sm:p-6 rounded-2xl shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-      {/* Left side: Icon & Title */}
-      <div className="flex items-center space-x-3.5 min-w-0">
-        <div className={`p-3 rounded-xl border flex-shrink-0 ${styles.iconBg}`}>
-          <Icon size={22} />
-        </div>
-        <div className="min-w-0">
-          <h2 className="text-xl font-bold text-gray-100 tracking-tight truncate">
-            {title}
-          </h2>
-          <p className="text-xs text-gray-400 mt-0.5 leading-relaxed line-clamp-2 sm:line-clamp-none">
-            {description}
-          </p>
-        </div>
-      </div>
+  useEffect(() => {
+    registerSaveHandler(onSave || null);
+    return () => registerSaveHandler(null);
+  }, [onSave, registerSaveHandler]);
 
-      {/* Right side: Mode Toggle, Refresh, Save & Extra buttons */}
-      <div className="flex flex-wrap items-center gap-3 self-start lg:self-auto flex-shrink-0">
+  useEffect(() => {
+    setHeaderActions(
+      <div className="flex items-center space-x-2.5">
         {mode !== undefined && onModeChange && (
           <SimpleAdvancedToggle
             mode={mode}
@@ -98,13 +94,14 @@ export default function ModHeader({
             type="button"
             onClick={onRefresh}
             disabled={isRefreshing}
-            className="p-2.5 bg-gray-800/80 hover:bg-gray-800 text-gray-400 hover:text-gray-200 border border-gray-700/80 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-gray-900/90 hover:bg-gray-800 border border-gray-700/80 hover:border-gray-600 rounded-xl text-xs font-semibold text-gray-200 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
             title="Reload from server"
           >
             <FiRefreshCw
-              size={15}
-              className={isRefreshing ? 'animate-spin text-gray-300' : ''}
+              size={13}
+              className={isRefreshing ? 'animate-spin text-orange-400' : 'text-gray-400'}
             />
+            <span className="hidden sm:inline">Refresh</span>
           </button>
         )}
 
@@ -113,7 +110,8 @@ export default function ModHeader({
             type="button"
             onClick={onSave}
             disabled={isSaving}
-            className={`text-white px-5 py-2.5 rounded-xl font-medium text-xs transition-all shadow-lg flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed ${styles.saveBtn}`}
+            className={`flex items-center space-x-2 px-4 py-1.5 rounded-xl text-xs font-bold text-white transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${styles.saveBtn}`}
+            title="Save Configuration (⌘S / Ctrl+S)"
           >
             {isSaving ? (
               <FiLoader className="animate-spin text-sm" />
@@ -121,9 +119,31 @@ export default function ModHeader({
               <FiCheck className="text-sm" />
             )}
             <span>{isSaving ? 'Saving...' : saveLabel}</span>
+            <span className="hidden md:inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-bold bg-black/30 border border-white/20 rounded text-white/90">
+              ⌘S
+            </span>
           </button>
         )}
       </div>
-    </div>
-  );
+    );
+
+    return () => {
+      setHeaderActions(null);
+    };
+  }, [
+    mode,
+    onModeChange,
+    tabId,
+    accentColor,
+    onRefresh,
+    isRefreshing,
+    onSave,
+    isSaving,
+    saveLabel,
+    children,
+    styles.saveBtn,
+    setHeaderActions,
+  ]);
+
+  return null;
 }

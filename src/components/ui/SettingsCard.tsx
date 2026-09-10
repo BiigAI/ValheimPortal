@@ -24,7 +24,6 @@ const iconColors = {
 
 export default function SettingsCard({
   title,
-  subtitle,
   icon: Icon,
   badge,
   action,
@@ -39,22 +38,17 @@ export default function SettingsCard({
       className={`bg-gray-900/60 backdrop-blur-md border border-gray-800/80 rounded-2xl p-5 sm:p-6 shadow-xl space-y-5 transition-all ${className}`}
     >
       {(title || Icon || action || badge) && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-800/80 pb-4">
+        <div className="flex items-center justify-between gap-2 border-b border-gray-800/80 pb-4">
           <div className="flex items-center space-x-2.5">
             {Icon && <Icon className={`text-base ${iconColorClass}`} />}
-            <div>
-              {title && (
-                <h3 className="font-semibold text-gray-100 text-sm sm:text-base">
-                  {title}
-                </h3>
-              )}
-              {subtitle && (
-                <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>
-              )}
-            </div>
+            {title && (
+              <h3 className="font-bold text-gray-100 text-sm sm:text-base tracking-tight">
+                {title}
+              </h3>
+            )}
           </div>
 
-          <div className="flex items-center space-x-2 self-start sm:self-auto">
+          <div className="flex items-center space-x-2 shrink-0">
             {badge}
             {action}
           </div>

@@ -1,6 +1,6 @@
 {
   "name": "Bigfrost_ServerPortal",
-  "version_number": "1.0.2",
+  "version_number": "1.1.0",
   "website_url": "https://github.com/BiigAI/ValheimPortal",
   "description": "Unified web management portal for Valheim dedicated servers. Real-time telemetry, player management, remote console, and live configuration for BigAI server modules.",
   "dependencies": [

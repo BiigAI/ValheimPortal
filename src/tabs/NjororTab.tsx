@@ -8,11 +8,13 @@ import {
   FiMoon,
   FiAlertTriangle,
   FiNavigation,
+  FiRefreshCw,
 } from 'react-icons/fi';
 import { useToast } from '../context/ToastContext';
 import { api, type NjororConfig } from '../api/client';
 import { useTabMode } from '../hooks/useTabMode';
 import ModHeader from '../components/ui/ModHeader';
+import KpiGaugeCard from '../components/ui/KpiGaugeCard';
 import SettingsCard from '../components/ui/SettingsCard';
 import SettingRow from '../components/ui/SettingRow';
 import SliderField from '../components/ui/SliderField';
@@ -86,12 +88,11 @@ export default function NjororTab({ onSaved }: NjororTabProps = {}) {
   };
 
   return (
-    <div className="space-y-6 w-full">
-      {/* Mod Header */}
+    <div className="space-y-6 pb-12">
+      {/* ── 1. Top Hero Header ── */}
       <ModHeader
         icon={FiCompass}
-        title="Njörðr Fair Winds & Ocean Weather"
-        description="Server-side wind deflection, storm frequency modulation, and Sea Serpent spawner tables."
+        title="Njörðr Sailing & Atmospheric Controls"
         mode={mode}
         onModeChange={setMode}
         tabId="njoror"
@@ -102,151 +103,295 @@ export default function NjororTab({ onSaved }: NjororTabProps = {}) {
         isSaving={isSaving}
       />
 
-      {/* 2-Column Grid: Core Rules & Wind Vector Compass */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Core Rules Toggles */}
-        <SettingsCard
-          title="Ocean Atmosphere Modules"
-          subtitle="Toggle sailing assistance, dynamic weather modulation, and serpents"
+      {/* ── 2. Top Visual Telemetry Gauges (Real Environmental Rates) ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <KpiGaugeCard
           icon={FiWind}
+          label="Headwind Deflection"
+          value={`${config.headwindMitigationPercent.toFixed(0)}%`}
+          unit="Chance"
+          progressPercent={config.enableFairWinds ? config.headwindMitigationPercent : 0}
+          progressGradient="from-cyan-500 to-blue-400"
           accentColor="cyan"
-        >
-          <div className="space-y-3">
-            <SettingRow
-              label="Fair Winds & Sailing Assistance"
-              description="Mitigates dead headwinds by deflecting wind into favorable crosswinds"
-              checked={config.enableFairWinds}
-              disabled={isLoading}
-              onChange={(c) => setConfig({ ...config, enableFairWinds: c })}
-              accentColor="cyan"
-            />
+        />
 
-            <SettingRow
-              label="Ocean Tailwind Sanctuary"
-              description="Guarantees full tailwind for ships navigating deep ocean zones"
-              checked={config.alwaysTailwindInOcean}
-              disabled={!config.enableFairWinds || isLoading}
-              onChange={(c) =>
-                setConfig({ ...config, alwaysTailwindInOcean: c })
-              }
-              accentColor="cyan"
-            />
-
-            <SettingRow
-              label="Check Deflect on Wind Change"
-              description="Evaluate fair-wind deflection only when Valheim selects a new wind target (recommended, takes priority over timed)"
-              checked={config.checkDeflectOnWindChange}
-              disabled={!config.enableFairWinds || isLoading}
-              onChange={(c) =>
-                setConfig({ ...config, checkDeflectOnWindChange: c })
-              }
-              accentColor="cyan"
-            />
-
-            <div className={`p-3.5 bg-gray-950/80 rounded-xl border border-gray-800 ${config.checkDeflectOnWindChange ? 'opacity-40 pointer-events-none' : ''}`}>
-              <div className="flex items-center justify-between">
-                <div className="flex-1 mr-4">
-                  <span className="block text-sm font-semibold text-gray-200">Timed Deflect Check (seconds)</span>
-                  <span className="block text-[11px] text-gray-400 mt-0.5">When wind-change check is off, re-evaluate fair winds at this interval. 0 = disabled.</span>
-                </div>
-                <input
-                  type="number"
-                  min={0}
-                  max={3600}
-                  step={10}
-                  value={config.checkDeflectTimeSeconds}
-                  disabled={config.checkDeflectOnWindChange || !config.enableFairWinds || isLoading}
-                  onChange={(e) =>
-                    setConfig({ ...config, checkDeflectTimeSeconds: Math.max(0, Math.min(3600, parseInt(e.target.value) || 0)) })
-                  }
-                  className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 text-center font-mono focus:outline-none focus:border-cyan-500/80 transition-all"
-                />
-              </div>
-            </div>
-
-            <SettingRow
-              label="Atmospheric Weather Modulation"
-              description="Enables server-side weather tuning for thunderstorms, rain, and clear skies"
-              checked={config.enableWeatherTuning}
-              disabled={isLoading}
-              onChange={(c) => setConfig({ ...config, enableWeatherTuning: c })}
-              accentColor="cyan"
-            />
-
-            <SettingRow
-              label="Sea Serpent Encounter Controls"
-              description="Enables custom spawn rates and timing rules for ocean sea serpents"
-              checked={config.enableSerpentTuning}
-              disabled={isLoading}
-              onChange={(c) =>
-                setConfig({ ...config, enableSerpentTuning: c })
-              }
-              accentColor="cyan"
-            />
-
-            <SettingRow
-              label="Enable Verbose Debug Logging"
-              description="Log detailed Njoror diagnostics. Errors and successful headwind deflections are always logged."
-              checked={config.enableDebugLogging}
-              disabled={isLoading}
-              onChange={(c) => setConfig({ ...config, enableDebugLogging: c })}
-              accentColor="cyan"
-            />
-          </div>
-        </SettingsCard>
-
-        {/* Live Wind Vector Visualizer */}
-        <SettingsCard
-          title="Authoritative Wind Vector Simulator"
-          subtitle="Real-time preview of server-side deflection angles and velocity"
-          icon={FiNavigation}
+        <KpiGaugeCard
+          icon={FiCloudRain}
+          label="Tempest Intensity"
+          value={`${config.stormFrequencyMultiplier.toFixed(1)}x`}
+          unit="Multiplier"
+          progressPercent={Math.min(100, (config.stormFrequencyMultiplier / 3.0) * 100)}
+          progressGradient="from-indigo-500 to-cyan-400"
           accentColor="cyan"
-        >
-          <div className="p-4 bg-gray-950/80 border border-gray-800 rounded-xl flex flex-col items-center justify-center space-y-3">
-            <div className="relative w-32 h-32 rounded-full border-2 border-dashed border-cyan-500/30 flex items-center justify-center bg-gray-900/50 shadow-inner">
-              {/* Compass points */}
-              <span className="absolute top-1.5 text-[10px] font-bold text-gray-500 font-mono">
-                N
-              </span>
-              <span className="absolute bottom-1.5 text-[10px] font-bold text-gray-500 font-mono">
-                S
-              </span>
-              <span className="absolute left-2 text-[10px] font-bold text-gray-500 font-mono">
-                W
-              </span>
-              <span className="absolute right-2 text-[10px] font-bold text-gray-500 font-mono">
-                E
-              </span>
+        />
 
-              {/* Ship marker */}
-              <div className="w-8 h-8 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center text-xs shadow-md">
-                ⛵
-              </div>
-
-              {/* Wind arrow */}
-              <div
-                className="absolute inset-0 flex items-center justify-center transition-transform duration-700 pointer-events-none"
-                style={{ transform: `rotate(${activeCompassAngle}deg)` }}
-              >
-                <div className="w-1 h-12 bg-gradient-to-t from-transparent via-cyan-400 to-cyan-200 rounded-full -translate-y-4 shadow-lg shadow-cyan-400/50"></div>
-              </div>
-            </div>
-            <span className="text-[11px] font-mono text-cyan-300">
-              Wind Angle: {activeCompassAngle}° (
-              {activeCompassAngle < 90
-                ? 'NE'
-                : activeCompassAngle < 180
-                ? 'SE'
-                : activeCompassAngle < 270
-                ? 'SW'
-                : 'NW'}
-              ) • Deflection: {config.headwindMitigationPercent.toFixed(0)}%
-            </span>
-          </div>
-        </SettingsCard>
+        <KpiGaugeCard
+          icon={FiCompass}
+          label="Serpent Threat"
+          value={`${config.nighttimeSerpentSpawnChance.toFixed(0)}%`}
+          unit="Night Spawn Rate"
+          progressPercent={Math.min(100, (config.nighttimeSerpentSpawnChance / 50) * 100)}
+          progressGradient="from-cyan-500 to-rose-400"
+          accentColor="cyan"
+        />
       </div>
 
-      {/* Advanced Fine-Tuning */}
+      {/* ── 3. Split Command Center: Atmosphere Rules & Wind Compass ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Atmosphere Module Toggles (7 cols) */}
+        <div className="lg:col-span-7">
+          <SettingsCard
+            title="Ocean Atmosphere Modules"
+            subtitle="Toggle sailing assistance, dynamic weather modulation, and serpents"
+            icon={FiWind}
+            accentColor="cyan"
+          >
+            <div className="space-y-3">
+              <SettingRow
+                label="Fair Winds & Sailing Assistance"
+                description="Mitigates dead headwinds by deflecting wind into favorable crosswinds"
+                checked={config.enableFairWinds}
+                disabled={isLoading}
+                onChange={(c) => setConfig({ ...config, enableFairWinds: c })}
+                accentColor="cyan"
+              />
+
+              <SettingRow
+                label="Ocean Tailwind Sanctuary"
+                description="Guarantees full tailwind for ships navigating deep ocean zones"
+                checked={config.alwaysTailwindInOcean}
+                disabled={!config.enableFairWinds || isLoading}
+                onChange={(c) =>
+                  setConfig({ ...config, alwaysTailwindInOcean: c })
+                }
+                accentColor="cyan"
+              />
+
+              <SettingRow
+                label="Check Deflect on Wind Change"
+                description="Evaluate fair-wind deflection only when Valheim selects a new wind target (recommended, takes priority over timed)"
+                checked={config.checkDeflectOnWindChange}
+                disabled={!config.enableFairWinds || isLoading}
+                onChange={(c) =>
+                  setConfig({ ...config, checkDeflectOnWindChange: c })
+                }
+                accentColor="cyan"
+              />
+
+              <div
+                className={`p-3.5 bg-gray-950/80 rounded-xl border border-gray-800 transition-opacity ${
+                  config.checkDeflectOnWindChange ? 'opacity-40 pointer-events-none' : ''
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 mr-4">
+                    <span className="block text-sm font-semibold text-gray-200">
+                      Timed Deflect Check (seconds)
+                    </span>
+                    <span className="block text-[11px] text-gray-400 mt-0.5">
+                      When wind-change check is off, re-evaluate fair winds at this interval. 0 = disabled.
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    max={3600}
+                    step={10}
+                    value={config.checkDeflectTimeSeconds}
+                    disabled={config.checkDeflectOnWindChange || !config.enableFairWinds || isLoading}
+                    onChange={(e) =>
+                      setConfig({
+                        ...config,
+                        checkDeflectTimeSeconds: Math.max(0, Math.min(3600, parseInt(e.target.value) || 0)),
+                      })
+                    }
+                    className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 text-center font-mono focus:outline-none focus:border-cyan-500/80 transition-all"
+                  />
+                </div>
+              </div>
+
+              <SettingRow
+                label="Atmospheric Weather Modulation"
+                description="Enables server-side weather tuning for thunderstorms, rain, and clear skies"
+                checked={config.enableWeatherTuning}
+                disabled={isLoading}
+                onChange={(c) => setConfig({ ...config, enableWeatherTuning: c })}
+                accentColor="cyan"
+              />
+
+              <SettingRow
+                label="Sea Serpent Encounter Controls"
+                description="Enables custom spawn rates and timing rules for ocean sea serpents"
+                checked={config.enableSerpentTuning}
+                disabled={isLoading}
+                onChange={(c) =>
+                  setConfig({ ...config, enableSerpentTuning: c })
+                }
+                accentColor="cyan"
+              />
+
+              <SettingRow
+                label="Enable Verbose Debug Logging"
+                description="Log detailed Njoror diagnostics. Errors and successful headwind deflections are always logged."
+                checked={config.enableDebugLogging}
+                disabled={isLoading}
+                onChange={(c) => setConfig({ ...config, enableDebugLogging: c })}
+                accentColor="cyan"
+              />
+            </div>
+          </SettingsCard>
+        </div>
+
+        {/* Live Wind Vector Visualizer (5 cols) */}
+        <div className="lg:col-span-5 flex flex-col">
+          <SettingsCard
+            title="Authoritative Wind Vector"
+            icon={FiNavigation}
+            accentColor="cyan"
+            className="h-full flex flex-col"
+          >
+            <div className="flex-1 flex flex-col justify-between space-y-4">
+              {/* Compass Instrument */}
+              <div className="p-5 bg-gray-950/80 border border-gray-800 rounded-2xl flex flex-col items-center justify-center space-y-4 shadow-inner">
+                <div className="relative w-44 h-44 rounded-full border-2 border-dashed border-cyan-500/30 flex items-center justify-center bg-gray-900/50 shadow-inner">
+                  {/* Compass cardinal marks */}
+                  <span className="absolute top-2 text-[11px] font-bold text-cyan-400 font-mono">
+                    N
+                  </span>
+                  <span className="absolute bottom-2 text-[11px] font-bold text-gray-400 font-mono">
+                    S
+                  </span>
+                  <span className="absolute left-2.5 text-[11px] font-bold text-gray-400 font-mono">
+                    W
+                  </span>
+                  <span className="absolute right-2.5 text-[11px] font-bold text-gray-400 font-mono">
+                    E
+                  </span>
+
+                  {/* Intercardinal marks */}
+                  <span className="absolute top-7 right-7 text-[9px] font-semibold text-gray-500 font-mono">
+                    NE
+                  </span>
+                  <span className="absolute bottom-7 right-7 text-[9px] font-semibold text-gray-500 font-mono">
+                    SE
+                  </span>
+                  <span className="absolute bottom-7 left-7 text-[9px] font-semibold text-gray-500 font-mono">
+                    SW
+                  </span>
+                  <span className="absolute top-7 left-7 text-[9px] font-semibold text-gray-500 font-mono">
+                    NW
+                  </span>
+
+                  {/* Center ship marker */}
+                  <div className="w-11 h-11 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center text-lg shadow-md z-10">
+                    ⛵
+                  </div>
+
+                  {/* Rotating wind arrow needle */}
+                  <div
+                    className="absolute inset-0 flex items-center justify-center transition-transform duration-700 pointer-events-none"
+                    style={{ transform: `rotate(${activeCompassAngle}deg)` }}
+                  >
+                    <div className="w-1.5 h-18 bg-gradient-to-t from-transparent via-cyan-400 to-cyan-200 rounded-full -translate-y-7 shadow-lg shadow-cyan-400/50" />
+                  </div>
+                </div>
+
+                <div className="text-center font-mono space-y-0.5">
+                  <div className="text-sm font-bold text-cyan-300">
+                    Wind Heading: {activeCompassAngle}° (
+                    {activeCompassAngle >= 337.5 || activeCompassAngle < 22.5
+                      ? 'N'
+                      : activeCompassAngle < 67.5
+                      ? 'NE'
+                      : activeCompassAngle < 112.5
+                      ? 'E'
+                      : activeCompassAngle < 157.5
+                      ? 'SE'
+                      : activeCompassAngle < 202.5
+                      ? 'S'
+                      : activeCompassAngle < 247.5
+                      ? 'SW'
+                      : activeCompassAngle < 292.5
+                      ? 'W'
+                      : 'NW'}
+                    )
+                  </div>
+                  <div className="text-xs text-gray-400">
+                    Deflection Probability: <strong className="text-gray-200">{config.enableFairWinds ? `${config.headwindMitigationPercent.toFixed(0)}%` : 'Off'}</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Deflection Telemetry Matrix */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="p-3 bg-gray-950/70 border border-gray-800 rounded-xl">
+                  <span className="text-[11px] text-gray-400 font-mono block">Ocean Tailwind</span>
+                  <span className={`text-xs font-bold block mt-1 ${config.alwaysTailwindInOcean ? 'text-emerald-400' : 'text-gray-300'}`}>
+                    {config.alwaysTailwindInOcean ? 'Guaranteed' : 'Dynamic Flow'}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-gray-950/70 border border-gray-800 rounded-xl">
+                  <span className="text-[11px] text-gray-400 font-mono block">Min Wind Velocity</span>
+                  <span className="text-xs font-bold text-cyan-300 block mt-1">
+                    {config.enableFairWinds ? `${config.minWindSpeedMultiplier.toFixed(1)}x Normal` : 'Vanilla'}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-gray-950/70 border border-gray-800 rounded-xl">
+                  <span className="text-[11px] text-gray-400 font-mono block">Wind Retargeting</span>
+                  <span className="text-xs font-bold text-gray-200 block mt-1 truncate">
+                    {config.checkDeflectOnWindChange ? 'On Weather Shift' : `${config.checkDeflectTimeSeconds}s Timer`}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-gray-950/70 border border-gray-800 rounded-xl">
+                  <span className="text-[11px] text-gray-400 font-mono block">Night Serpents</span>
+                  <span className="text-xs font-bold text-amber-300 block mt-1">
+                    {config.nighttimeSerpentSpawnChance.toFixed(0)}% Encounter
+                  </span>
+                </div>
+              </div>
+
+              {/* Cardinal Angle Quick Controls */}
+              <div className="p-2.5 bg-gray-950/60 border border-gray-800/80 rounded-xl flex items-center justify-between gap-2">
+                <span className="text-[11px] font-mono text-gray-400 shrink-0">Test Vector:</span>
+                <div className="flex items-center space-x-1.5">
+                  {[
+                    { label: '0° N', angle: 0 },
+                    { label: '90° E', angle: 90 },
+                    { label: '180° S', angle: 180 },
+                    { label: '270° W', angle: 270 },
+                  ].map((pt) => (
+                    <button
+                      key={pt.label}
+                      type="button"
+                      onClick={() => setActiveCompassAngle(pt.angle)}
+                      className={`px-2 py-1 text-[11px] font-mono rounded-lg border transition-all ${
+                        activeCompassAngle === pt.angle
+                          ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300 font-bold'
+                          : 'bg-gray-900 border-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+                      }`}
+                    >
+                      {pt.label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setActiveCompassAngle(Math.floor(Math.random() * 360))}
+                    title="Simulate random wind shift"
+                    className="p-1.5 text-gray-400 hover:text-cyan-300 bg-gray-900 border border-gray-800 hover:border-cyan-500/30 rounded-lg transition-all"
+                  >
+                    <FiRefreshCw size={11} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </SettingsCard>
+        </div>
+      </div>
+
+      {/* ── 4. Advanced Fine-Tuning Sliders ── */}
       <AnimatePresence>
         {mode === 'advanced' && (
           <motion.div
@@ -278,9 +423,9 @@ export default function NjororTab({ onSaved }: NjororTabProps = {}) {
                   formatValue={(v) => `${v.toFixed(0)}%`}
                   accentColor="cyan"
                   ticks={[
-                    { label: '0% (Vanilla)' },
-                    { label: '60% (Recommended)' },
-                    { label: '100% (No Headwinds)' },
+                    { label: '0% (Vanilla)', value: 0 },
+                    { label: '50%', value: 50 },
+                    { label: '100%', value: 100 },
                   ]}
                 />
 
@@ -291,6 +436,7 @@ export default function NjororTab({ onSaved }: NjororTabProps = {}) {
                   min={0.5}
                   max={2.5}
                   step={0.1}
+                  vanillaDefault={1.0}
                   disabled={!config.enableFairWinds || isLoading}
                   onChange={(v) =>
                     setConfig({ ...config, minWindSpeedMultiplier: v })
@@ -298,9 +444,9 @@ export default function NjororTab({ onSaved }: NjororTabProps = {}) {
                   formatValue={(v) => `${v.toFixed(1)}x`}
                   accentColor="cyan"
                   ticks={[
-                    { label: '0.5x (Light)' },
-                    { label: '1.0x (Vanilla)' },
-                    { label: '2.5x (Gale)' },
+                    { label: '0.5x', value: 0.5 },
+                    { label: '1.0x (Vanilla)', value: 1.0 },
+                    { label: '2.5x', value: 2.5 },
                   ]}
                 />
               </div>
@@ -322,6 +468,7 @@ export default function NjororTab({ onSaved }: NjororTabProps = {}) {
                   min={0.1}
                   max={3.0}
                   step={0.1}
+                  vanillaDefault={1.0}
                   disabled={!config.enableWeatherTuning || isLoading}
                   onChange={(v) =>
                     setConfig({ ...config, stormFrequencyMultiplier: v })
@@ -329,9 +476,9 @@ export default function NjororTab({ onSaved }: NjororTabProps = {}) {
                   formatValue={(v) => `${v.toFixed(2)}x`}
                   accentColor="indigo"
                   ticks={[
-                    { label: '0.1x (Calm)' },
-                    { label: '1.0x' },
-                    { label: '3.0x (Tempest)' },
+                    { label: '0.1x', value: 0.1 },
+                    { label: '1.0x (Vanilla)', value: 1.0 },
+                    { label: '3.0x', value: 3.0 },
                   ]}
                 />
 
@@ -343,6 +490,7 @@ export default function NjororTab({ onSaved }: NjororTabProps = {}) {
                   min={0.1}
                   max={3.0}
                   step={0.1}
+                  vanillaDefault={1.0}
                   disabled={!config.enableWeatherTuning || isLoading}
                   onChange={(v) =>
                     setConfig({ ...config, rainFrequencyMultiplier: v })
@@ -350,9 +498,9 @@ export default function NjororTab({ onSaved }: NjororTabProps = {}) {
                   formatValue={(v) => `${v.toFixed(2)}x`}
                   accentColor="cyan"
                   ticks={[
-                    { label: '0.1x (Dry)' },
-                    { label: '1.0x' },
-                    { label: '3.0x (Soggy)' },
+                    { label: '0.1x', value: 0.1 },
+                    { label: '1.0x (Vanilla)', value: 1.0 },
+                    { label: '3.0x', value: 3.0 },
                   ]}
                 />
 
@@ -364,6 +512,7 @@ export default function NjororTab({ onSaved }: NjororTabProps = {}) {
                   min={0.5}
                   max={3.0}
                   step={0.1}
+                  vanillaDefault={1.0}
                   disabled={!config.enableWeatherTuning || isLoading}
                   onChange={(v) =>
                     setConfig({ ...config, clearFrequencyMultiplier: v })
@@ -371,9 +520,9 @@ export default function NjororTab({ onSaved }: NjororTabProps = {}) {
                   formatValue={(v) => `${v.toFixed(2)}x`}
                   accentColor="amber"
                   ticks={[
-                    { label: '0.5x' },
-                    { label: '1.0x' },
-                    { label: '3.0x (Sunny)' },
+                    { label: '0.5x', value: 0.5 },
+                    { label: '1.0x (Vanilla)', value: 1.0 },
+                    { label: '3.0x', value: 3.0 },
                   ]}
                 />
               </div>
@@ -403,9 +552,9 @@ export default function NjororTab({ onSaved }: NjororTabProps = {}) {
                     formatValue={(v) => `${v.toFixed(0)}%`}
                     accentColor="cyan"
                     ticks={[
-                      { label: '0% (Vanilla)' },
-                      { label: '15%' },
-                      { label: '30% (High)' },
+                      { label: '0% (Vanilla)', value: 0 },
+                      { label: '15%', value: 15 },
+                      { label: '30%', value: 30 },
                     ]}
                   />
 
@@ -417,6 +566,7 @@ export default function NjororTab({ onSaved }: NjororTabProps = {}) {
                     min={1}
                     max={50}
                     step={1}
+                    vanillaDefault={5}
                     disabled={!config.enableSerpentTuning || isLoading}
                     onChange={(v) =>
                       setConfig({ ...config, nighttimeSerpentSpawnChance: v })
@@ -424,9 +574,9 @@ export default function NjororTab({ onSaved }: NjororTabProps = {}) {
                     formatValue={(v) => `${v.toFixed(0)}%`}
                     accentColor="indigo"
                     ticks={[
-                      { label: '1%' },
-                      { label: '5% (Vanilla)' },
-                      { label: '50% (Infested)' },
+                      { label: '5% (Vanilla)', value: 5 },
+                      { label: '25%', value: 25 },
+                      { label: '50%', value: 50 },
                     ]}
                   />
                 </div>
