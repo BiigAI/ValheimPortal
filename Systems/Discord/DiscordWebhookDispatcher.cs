@@ -230,14 +230,10 @@ namespace Bifrostheim.Systems.Discord
                     {
                         new Dictionary<string, object?>
                         {
-                            ["title"] = "🟢 Viking Arrived in the 10th World",
-                            ["description"] = $"**{EscapeMarkdown(playerName)}** has awakened in the 10th realm.",
+                            ["title"] = "🟢 Viking Joined",
+                            ["description"] = $"**{EscapeMarkdown(playerName)}** entered the realm.",
                             ["color"] = ColorGreen,
-                            ["fields"] = new[]
-                            {
-                                new { name = "Online Players", value = $"{onlineCount} / {maxSlots}", inline = true }
-                            },
-                            ["footer"] = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                            ["footer"] = new { text = $"Bifrostheim • {onlineCount}/{maxSlots} online" },
                             ["timestamp"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                         }
                     }
@@ -250,7 +246,7 @@ namespace Bifrostheim.Systems.Discord
                 {
                     ["username"] = botName,
                     ["avatar_url"] = avatar,
-                    ["content"] = $"🟢 **{EscapeMarkdown(playerName)}** arrived in the 10th world ({onlineCount}/{maxSlots} online)."
+                    ["content"] = $"🟢 **{EscapeMarkdown(playerName)}** entered the realm ({onlineCount}/{maxSlots} online)."
                 };
                 EnqueuePayload(SimpleJson.SerializeObject(payload, false));
             }
@@ -274,15 +270,10 @@ namespace Bifrostheim.Systems.Discord
                     {
                         new Dictionary<string, object?>
                         {
-                            ["title"] = "🔵 Viking Departed",
-                            ["description"] = $"**{EscapeMarkdown(playerName)}** departed the 10th realm.",
+                            ["title"] = "🔵 Viking Left",
+                            ["description"] = $"**{EscapeMarkdown(playerName)}** left the realm.",
                             ["color"] = ColorBlue,
-                            ["fields"] = new[]
-                            {
-                                new { name = "Session Duration", value = durationStr, inline = true },
-                                new { name = "Remaining Online", value = $"{onlineCount} / {maxSlots}", inline = true }
-                            },
-                            ["footer"] = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                            ["footer"] = new { text = $"Bifrostheim • Session: {durationStr} • {onlineCount}/{maxSlots} online" },
                             ["timestamp"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                         }
                     }
@@ -295,7 +286,7 @@ namespace Bifrostheim.Systems.Discord
                 {
                     ["username"] = botName,
                     ["avatar_url"] = avatar,
-                    ["content"] = $"🔵 **{EscapeMarkdown(playerName)}** departed the 10th realm (Session: {durationStr}, {onlineCount}/{maxSlots} online)."
+                    ["content"] = $"🔵 **{EscapeMarkdown(playerName)}** left the realm (Session: {durationStr} • {onlineCount}/{maxSlots} online)."
                 };
                 EnqueuePayload(SimpleJson.SerializeObject(payload, false));
             }
@@ -325,15 +316,6 @@ namespace Bifrostheim.Systems.Discord
 
             if (BifrostheimPlugin.DiscordUseRichEmbeds.Value)
             {
-                var fields = new List<object>
-                {
-                    new { name = "Biome", value = biome, inline = true }
-                };
-                if (!string.IsNullOrWhiteSpace(killerName))
-                {
-                    fields.Add(new { name = "Killer", value = killerName!, inline = true });
-                }
-
                 var payload = new Dictionary<string, object?>
                 {
                     ["username"] = botName,
@@ -345,8 +327,7 @@ namespace Bifrostheim.Systems.Discord
                             ["title"] = title,
                             ["description"] = desc,
                             ["color"] = ColorRed,
-                            ["fields"] = fields.ToArray(),
-                            ["footer"] = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                            ["footer"] = new { text = "Bifrostheim" },
                             ["timestamp"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                         }
                     }
@@ -371,7 +352,7 @@ namespace Bifrostheim.Systems.Discord
 
             string botName = GetBotName();
             string avatar = GetBotAvatar();
-            string desc = $"⚔️ **{EscapeMarkdown(killerName)}** vanquished **{EscapeMarkdown(victimName)}** in glorious combat in the **{biome}**!";
+            string desc = $"**{EscapeMarkdown(killerName)}** vanquished **{EscapeMarkdown(victimName)}** in the **{biome}**!";
 
             if (BifrostheimPlugin.DiscordUseRichEmbeds.Value)
             {
@@ -383,16 +364,10 @@ namespace Bifrostheim.Systems.Discord
                     {
                         new Dictionary<string, object?>
                         {
-                            ["title"] = "⚔️ Viking Duel / PvP Slaying",
+                            ["title"] = "⚔️ Viking Duel",
                             ["description"] = desc,
                             ["color"] = ColorRed,
-                            ["fields"] = new[]
-                            {
-                                new { name = "Victor", value = killerName, inline = true },
-                                new { name = "Fallen", value = victimName, inline = true },
-                                new { name = "Biome", value = biome, inline = true }
-                            },
-                            ["footer"] = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                            ["footer"] = new { text = "Bifrostheim" },
                             ["timestamp"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                         }
                     }
@@ -405,7 +380,7 @@ namespace Bifrostheim.Systems.Discord
                 {
                     ["username"] = botName,
                     ["avatar_url"] = avatar,
-                    ["content"] = desc
+                    ["content"] = $"⚔️ {desc}"
                 };
                 EnqueuePayload(SimpleJson.SerializeObject(payload, false));
             }
@@ -431,7 +406,7 @@ namespace Bifrostheim.Systems.Discord
                             ["title"] = title,
                             ["description"] = description,
                             ["color"] = color,
-                            ["footer"] = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                            ["footer"] = new { text = "Bifrostheim" },
                             ["timestamp"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                         }
                     }
@@ -444,7 +419,7 @@ namespace Bifrostheim.Systems.Discord
                 {
                     ["username"] = botName,
                     ["avatar_url"] = avatar,
-                    ["content"] = $"🛡️ **{title}**: {description}"
+                    ["content"] = $"**{title}**: {description}"
                 };
                 EnqueuePayload(SimpleJson.SerializeObject(payload, false));
             }
@@ -457,10 +432,12 @@ namespace Bifrostheim.Systems.Discord
             string botName = GetBotName();
             string avatar = GetBotAvatar();
 
-            string title = started ? "⚡ Raid Event Started!" : "🌤️ Raid Event Ended";
+            string title = started
+                ? $"⚡ Raid: {(string.IsNullOrWhiteSpace(announcement) ? eventName : $"\"{announcement}\"")}"
+                : "🌤️ Raid Ended";
             string desc = started
-                ? $"**\"{announcement}\"**\nA raid has begun in the **{biome}**!"
-                : $"The raid in the **{biome}** has subsided.";
+                ? $"A raid has begun in the **{biome}**! Defend your homestead!"
+                : (!string.IsNullOrWhiteSpace(biome) ? $"The raid in the **{biome}** has subsided." : "The raid has subsided.");
             int color = started ? ColorOrange : ColorBlue;
 
             if (BifrostheimPlugin.DiscordUseRichEmbeds.Value)
@@ -476,12 +453,7 @@ namespace Bifrostheim.Systems.Discord
                             ["title"] = title,
                             ["description"] = desc,
                             ["color"] = color,
-                            ["fields"] = new[]
-                            {
-                                new { name = "Event", value = eventName, inline = true },
-                                new { name = "Biome", value = biome, inline = true }
-                            },
-                            ["footer"] = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                            ["footer"] = new { text = "Bifrostheim" },
                             ["timestamp"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                         }
                     }
@@ -494,7 +466,7 @@ namespace Bifrostheim.Systems.Discord
                 {
                     ["username"] = botName,
                     ["avatar_url"] = avatar,
-                    ["content"] = $"⚡ **{title}**: {desc}"
+                    ["content"] = $"**{title}**: {desc}"
                 };
                 EnqueuePayload(SimpleJson.SerializeObject(payload, false));
             }
@@ -507,9 +479,9 @@ namespace Bifrostheim.Systems.Discord
             string botName = GetBotName();
             string avatar = GetBotAvatar();
 
-            string title = defeated ? "🏆 Forsaken Slain!" : "⚡ Forsaken Awakened!";
+            string title = defeated ? "🏆 Forsaken Slain" : "⚡ Forsaken Awakened";
             string desc = defeated
-                ? $"The ancient power **{bossName}** has been vanquished from the 10th realm!"
+                ? $"The ancient power **{bossName}** has been vanquished from the realm!"
                 : $"**{bossName}** has answered the call of sacrifice in the **{biome}**!";
 
             if (BifrostheimPlugin.DiscordUseRichEmbeds.Value)
@@ -525,12 +497,7 @@ namespace Bifrostheim.Systems.Discord
                             ["title"] = title,
                             ["description"] = desc,
                             ["color"] = ColorGold,
-                            ["fields"] = new[]
-                            {
-                                new { name = "Forsaken", value = bossName, inline = true },
-                                new { name = "Biome", value = biome, inline = true }
-                            },
-                            ["footer"] = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                            ["footer"] = new { text = "Bifrostheim" },
                             ["timestamp"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                         }
                     }
@@ -543,7 +510,7 @@ namespace Bifrostheim.Systems.Discord
                 {
                     ["username"] = botName,
                     ["avatar_url"] = avatar,
-                    ["content"] = $"🏆 **{title}**: {desc}"
+                    ["content"] = $"**{title}**: {desc}"
                 };
                 EnqueuePayload(SimpleJson.SerializeObject(payload, false));
             }
@@ -556,21 +523,13 @@ namespace Bifrostheim.Systems.Discord
             string botName = GetBotName();
             string avatar = GetBotAvatar();
 
-            string title = $"🔨 Admin Action: Player {actionType}";
-            string desc = $"**{EscapeMarkdown(targetName)}** was {actionType.ToLower()}ed by **{adminName}**.";
+            string title = $"🔨 Player {actionType}";
+            string desc = string.IsNullOrWhiteSpace(reason)
+                ? $"**{EscapeMarkdown(targetName)}** was {actionType.ToLower()}ed by **{adminName}**."
+                : $"**{EscapeMarkdown(targetName)}** was {actionType.ToLower()}ed by **{adminName}**.\n**Reason:** {EscapeMarkdown(reason)}";
 
             if (BifrostheimPlugin.DiscordUseRichEmbeds.Value)
             {
-                var fields = new List<object>
-                {
-                    new { name = "Target", value = targetName, inline = true },
-                    new { name = "Moderator", value = adminName, inline = true }
-                };
-                if (!string.IsNullOrWhiteSpace(reason))
-                {
-                    fields.Add(new { name = "Reason", value = reason, inline = false });
-                }
-
                 var payload = new Dictionary<string, object?>
                 {
                     ["username"] = botName,
@@ -582,8 +541,7 @@ namespace Bifrostheim.Systems.Discord
                             ["title"] = title,
                             ["description"] = desc,
                             ["color"] = ColorPurple,
-                            ["fields"] = fields.ToArray(),
-                            ["footer"] = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                            ["footer"] = new { text = "Bifrostheim Moderation" },
                             ["timestamp"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                         }
                     }
@@ -596,7 +554,7 @@ namespace Bifrostheim.Systems.Discord
                 {
                     ["username"] = botName,
                     ["avatar_url"] = avatar,
-                    ["content"] = $"🔨 **{title}**: {desc} (Reason: {reason})"
+                    ["content"] = $"🔨 **{title}**: {desc}"
                 };
                 EnqueuePayload(SimpleJson.SerializeObject(payload, false), DiscordChannelTarget.Admin);
             }
@@ -623,7 +581,7 @@ namespace Bifrostheim.Systems.Discord
                             ["author"] = new { name = playerName },
                             ["description"] = $"📢 \"{EscapeMarkdown(message)}\"",
                             ["color"] = ColorSlate,
-                            ["footer"] = new { text = "In-Game Shout" },
+                            ["footer"] = new { text = "Bifrostheim Shout" },
                             ["timestamp"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                         }
                     }
@@ -655,7 +613,7 @@ namespace Bifrostheim.Systems.Discord
                 case "join":
                 case "player_join":
                     if (!useEmbed)
-                        return SimpleJson.SerializeObject(new { username = botName, avatar_url = avatar, content = "🟢 **Ragnar** arrived in the 10th world (3/10 online)." }, false);
+                        return SimpleJson.SerializeObject(new { username = botName, avatar_url = avatar, content = "🟢 **Ragnar** entered the realm (3/10 online)." }, false);
                     return SimpleJson.SerializeObject(new
                     {
                         username = botName,
@@ -664,11 +622,10 @@ namespace Bifrostheim.Systems.Discord
                         {
                             new
                             {
-                                title = "🟢 Viking Arrived in the 10th World",
-                                description = "**Ragnar Lothbrok** has awakened in the 10th realm.",
+                                title = "🟢 Viking Joined",
+                                description = "**Ragnar** entered the realm.",
                                 color = ColorGreen,
-                                fields = new[] { new { name = "Online Players", value = "3 / 10", @inline = true } },
-                                footer = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                                footer = new { text = "Bifrostheim • 3/10 online" },
                                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                             }
                         }
@@ -677,7 +634,7 @@ namespace Bifrostheim.Systems.Discord
                 case "leave":
                 case "player_leave":
                     if (!useEmbed)
-                        return SimpleJson.SerializeObject(new { username = botName, avatar_url = avatar, content = "🔵 **Lagertha** departed the 10th realm (Session: 1h 42m, 2/10 online)." }, false);
+                        return SimpleJson.SerializeObject(new { username = botName, avatar_url = avatar, content = "🔵 **Lagertha** left the realm (Session: 1h 42m • 2/10 online)." }, false);
                     return SimpleJson.SerializeObject(new
                     {
                         username = botName,
@@ -686,15 +643,10 @@ namespace Bifrostheim.Systems.Discord
                         {
                             new
                             {
-                                title = "🔵 Viking Departed",
-                                description = "**Lagertha** departed the 10th realm.",
+                                title = "🔵 Viking Left",
+                                description = "**Lagertha** left the realm.",
                                 color = ColorBlue,
-                                fields = new[]
-                                {
-                                    new { name = "Session Duration", value = "1h 42m", @inline = true },
-                                    new { name = "Remaining Online", value = "2 / 10", @inline = true }
-                                },
-                                footer = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                                footer = new { text = "Bifrostheim • Session: 1h 42m • 2/10 online" },
                                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                             }
                         }
@@ -715,8 +667,7 @@ namespace Bifrostheim.Systems.Discord
                                 title = "💀 Viking Fallen",
                                 description = "**Bjorn** met their end in the **Swamp**.",
                                 color = ColorRed,
-                                fields = new[] { new { name = "Biome", value = "Swamp", @inline = true } },
-                                footer = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                                footer = new { text = "Bifrostheim" },
                                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                             }
                         }
@@ -733,15 +684,10 @@ namespace Bifrostheim.Systems.Discord
                         {
                             new
                             {
-                                title = "💀 Viking Chronicle • Skald Slaying",
+                                title = "💀 Viking Fallen",
                                 description = "**Bjorn Ironside** was crushed into dust by a legendary **2-Star Troll** in the **Black Forest**!",
                                 color = ColorRed,
-                                fields = new[]
-                                {
-                                    new { name = "Killer", value = "2-Star Troll", @inline = true },
-                                    new { name = "Biome", value = "Black Forest", @inline = true }
-                                },
-                                footer = new { text = "Skald Chronicle • Bigfrost Server Portal" },
+                                footer = new { text = "Bifrostheim • Skald Chronicle" },
                                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                             }
                         }
@@ -750,7 +696,7 @@ namespace Bifrostheim.Systems.Discord
                 case "pvp":
                 case "pvp_kill":
                     if (!useEmbed)
-                        return SimpleJson.SerializeObject(new { username = botName, avatar_url = avatar, content = "⚔️ **Ragnar** vanquished **Ivar** in glorious combat in the **Plains**!" }, false);
+                        return SimpleJson.SerializeObject(new { username = botName, avatar_url = avatar, content = "⚔️ **Ragnar** vanquished **Ivar** in the **Plains**!" }, false);
                     return SimpleJson.SerializeObject(new
                     {
                         username = botName,
@@ -759,16 +705,10 @@ namespace Bifrostheim.Systems.Discord
                         {
                             new
                             {
-                                title = "⚔️ Viking Duel / PvP Slaying",
-                                description = "**Ragnar** vanquished **Ivar** in glorious combat in the **Plains**!",
+                                title = "⚔️ Viking Duel",
+                                description = "**Ragnar** vanquished **Ivar** in the **Plains**!",
                                 color = ColorRed,
-                                fields = new[]
-                                {
-                                    new { name = "Victor", value = "Ragnar", @inline = true },
-                                    new { name = "Fallen", value = "Ivar", @inline = true },
-                                    new { name = "Biome", value = "Plains", @inline = true }
-                                },
-                                footer = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                                footer = new { text = "Bifrostheim" },
                                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                             }
                         }
@@ -777,7 +717,7 @@ namespace Bifrostheim.Systems.Discord
                 case "server_online":
                 case "server_start":
                     if (!useEmbed)
-                        return SimpleJson.SerializeObject(new { username = botName, avatar_url = avatar, content = "🌲 **Server Online**: Valheim Dedicated Server is ready for connections! (Port: 2456, World: Valhalla)" }, false);
+                        return SimpleJson.SerializeObject(new { username = botName, avatar_url = avatar, content = "🌲 **Server Online**: Valheim dedicated server is online and ready for warriors." }, false);
                     return SimpleJson.SerializeObject(new
                     {
                         username = botName,
@@ -786,16 +726,10 @@ namespace Bifrostheim.Systems.Discord
                         {
                             new
                             {
-                                title = "🌲 Valheim Server Online",
-                                description = "The Bifrost bridge has opened! The dedicated server is now ready for warriors to enter.",
+                                title = "🌲 Server Online",
+                                description = "Valheim dedicated server is online and ready for warriors.",
                                 color = ColorGreen,
-                                fields = new[]
-                                {
-                                    new { name = "World", value = "Valhalla", @inline = true },
-                                    new { name = "Port", value = "2456", @inline = true },
-                                    new { name = "Portal Bridge", value = "Active", @inline = true }
-                                },
-                                footer = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                                footer = new { text = "Bifrostheim" },
                                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                             }
                         }
@@ -813,11 +747,10 @@ namespace Bifrostheim.Systems.Discord
                         {
                             new
                             {
-                                title = "⏳ Scheduled Server Restart Warning",
-                                description = "The server is scheduled to restart in **5 minutes** for maintenance.\nPlease seek shelter and ensure your progress is saved!",
+                                title = "⏳ Server Restart Warning",
+                                description = "The server is scheduled to restart in **5 minutes** for maintenance.\nPlease seek shelter and save your progress!",
                                 color = ColorOrange,
-                                fields = new[] { new { name = "Countdown", value = "5 minutes", @inline = true } },
-                                footer = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                                footer = new { text = "Bifrostheim" },
                                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                             }
                         }
@@ -825,7 +758,7 @@ namespace Bifrostheim.Systems.Discord
 
                 case "boss_summon":
                     if (!useEmbed)
-                        return SimpleJson.SerializeObject(new { username = botName, avatar_url = avatar, content = "⚡ **Moder** has answered the call of sacrifice in the **Mountain**!" }, false);
+                        return SimpleJson.SerializeObject(new { username = botName, avatar_url = avatar, content = "⚡ **Forsaken Awakened**: **Moder** has answered the call of sacrifice in the **Mountain**!" }, false);
                     return SimpleJson.SerializeObject(new
                     {
                         username = botName,
@@ -834,15 +767,10 @@ namespace Bifrostheim.Systems.Discord
                         {
                             new
                             {
-                                title = "⚡ Forsaken Awakened!",
+                                title = "⚡ Forsaken Awakened",
                                 description = "**Moder** has answered the call of sacrifice in the **Mountain**!",
                                 color = ColorGold,
-                                fields = new[]
-                                {
-                                    new { name = "Forsaken", value = "Moder", @inline = true },
-                                    new { name = "Biome", value = "Mountain", @inline = true }
-                                },
-                                footer = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                                footer = new { text = "Bifrostheim" },
                                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                             }
                         }
@@ -850,7 +778,7 @@ namespace Bifrostheim.Systems.Discord
 
                 case "boss_defeat":
                     if (!useEmbed)
-                        return SimpleJson.SerializeObject(new { username = botName, avatar_url = avatar, content = "🏆 The ancient dragon **Moder** has been vanquished from the 10th realm!" }, false);
+                        return SimpleJson.SerializeObject(new { username = botName, avatar_url = avatar, content = "🏆 **Forsaken Slain**: The ancient dragon **Moder** has been vanquished from the realm!" }, false);
                     return SimpleJson.SerializeObject(new
                     {
                         username = botName,
@@ -859,15 +787,10 @@ namespace Bifrostheim.Systems.Discord
                         {
                             new
                             {
-                                title = "🏆 Forsaken Slain!",
-                                description = "The ancient dragon **Moder** has been vanquished from the 10th realm! Odin smiles upon the victorious.",
+                                title = "🏆 Forsaken Slain",
+                                description = "The ancient dragon **Moder** has been vanquished from the realm!",
                                 color = ColorGold,
-                                fields = new[]
-                                {
-                                    new { name = "Forsaken", value = "Moder", @inline = true },
-                                    new { name = "Status", value = "Vanquished", @inline = true }
-                                },
-                                footer = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                                footer = new { text = "Bifrostheim" },
                                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                             }
                         }
@@ -875,7 +798,7 @@ namespace Bifrostheim.Systems.Discord
 
                 case "raid_start":
                     if (!useEmbed)
-                        return SimpleJson.SerializeObject(new { username = botName, avatar_url = avatar, content = "⚡ **Raid Event Started**: \"The ground is shaking\" in the **Black Forest**!" }, false);
+                        return SimpleJson.SerializeObject(new { username = botName, avatar_url = avatar, content = "⚡ **Raid: \"The ground is shaking\"**: A troll raid has begun in the **Black Forest**!" }, false);
                     return SimpleJson.SerializeObject(new
                     {
                         username = botName,
@@ -884,15 +807,10 @@ namespace Bifrostheim.Systems.Discord
                         {
                             new
                             {
-                                title = "⚡ Raid Event Started!",
-                                description = "**\"The ground is shaking\"**\nA troll raid has begun in the **Black Forest**! Defend your homesteads!",
+                                title = "⚡ Raid: \"The ground is shaking\"",
+                                description = "A troll raid has begun in the **Black Forest**! Defend your homestead!",
                                 color = ColorOrange,
-                                fields = new[]
-                                {
-                                    new { name = "Event", value = "The ground is shaking", @inline = true },
-                                    new { name = "Biome", value = "Black Forest", @inline = true }
-                                },
-                                footer = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                                footer = new { text = "Bifrostheim" },
                                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                             }
                         }
@@ -900,7 +818,7 @@ namespace Bifrostheim.Systems.Discord
 
                 case "raid_end":
                     if (!useEmbed)
-                        return SimpleJson.SerializeObject(new { username = botName, avatar_url = avatar, content = "🌤️ **Raid Event Ended**: The ground stops shaking in the **Black Forest**." }, false);
+                        return SimpleJson.SerializeObject(new { username = botName, avatar_url = avatar, content = "🌤️ **Raid Ended**: The raid in the **Black Forest** has subsided." }, false);
                     return SimpleJson.SerializeObject(new
                     {
                         username = botName,
@@ -909,15 +827,10 @@ namespace Bifrostheim.Systems.Discord
                         {
                             new
                             {
-                                title = "🌤️ Raid Event Ended",
-                                description = "The tremors subside. The raid in the **Black Forest** has been repelled.",
+                                title = "🌤️ Raid Ended",
+                                description = "The raid in the **Black Forest** has subsided.",
                                 color = ColorBlue,
-                                fields = new[]
-                                {
-                                    new { name = "Event", value = "The ground is shaking", @inline = true },
-                                    new { name = "Status", value = "Repelled", @inline = true }
-                                },
-                                footer = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                                footer = new { text = "Bifrostheim" },
                                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                             }
                         }
@@ -928,7 +841,7 @@ namespace Bifrostheim.Systems.Discord
                 case "admin":
                     string action = eventType.Contains("ban") ? "Banned" : "Kicked";
                     if (!useEmbed)
-                        return SimpleJson.SerializeObject(new { username = botName, avatar_url = avatar, content = $"🔨 **Admin Action**: Player **Gunnar** was {action.ToLower()}ed by **Admin** (Reason: Griefing longhouse)." }, false);
+                        return SimpleJson.SerializeObject(new { username = botName, avatar_url = avatar, content = $"🔨 **Player {action}**: **Gunnar** was {action.ToLower()}ed by **Admin** (Reason: Griefing longhouse perimeter)" }, false);
                     return SimpleJson.SerializeObject(new
                     {
                         username = botName,
@@ -937,16 +850,10 @@ namespace Bifrostheim.Systems.Discord
                         {
                             new
                             {
-                                title = $"🔨 Admin Action: Player {action}",
-                                description = $"**Gunnar** was {action.ToLower()}ed from the server by **Admin**.",
+                                title = $"🔨 Player {action}",
+                                description = $"**Gunnar** was {action.ToLower()}ed by **Admin**.\n**Reason:** Griefing longhouse perimeter",
                                 color = ColorPurple,
-                                fields = new[]
-                                {
-                                    new { name = "Target", value = "Gunnar", @inline = true },
-                                    new { name = "Moderator", value = "Admin", @inline = true },
-                                    new { name = "Reason", value = "Griefing longhouse perimeter", @inline = false }
-                                },
-                                footer = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                                footer = new { text = "Bifrostheim Moderation" },
                                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                             }
                         }
@@ -967,7 +874,7 @@ namespace Bifrostheim.Systems.Discord
                                 author = new { name = "Torstein" },
                                 description = "📢 \"To the longships! The serpents approach!\"",
                                 color = ColorSlate,
-                                footer = new { text = "In-Game Shout" },
+                                footer = new { text = "Bifrostheim Shout" },
                                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                             }
                         }
@@ -985,7 +892,7 @@ namespace Bifrostheim.Systems.Discord
                                 title = "⚔️ Bifrostheim Webhook Test",
                                 description = "Discord webhook bridge is active and operational.",
                                 color = ColorGold,
-                                footer = new { text = "Bifrostheim • Bigfrost Server Portal" },
+                                footer = new { text = "Bifrostheim" },
                                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                             }
                         }

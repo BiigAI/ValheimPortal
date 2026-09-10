@@ -15,6 +15,7 @@ namespace Bifrostheim.Systems.Discord
         private static readonly ConcurrentDictionary<string, float> _playerLastHealth = new ConcurrentDictionary<string, float>(StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<string> _knownGlobalKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static RandomEvent? _activeRaid;
+        private static string _activeRaidBiome = "";
         private static float _healthCheckTimer = 0f;
 
         // Cached reflection handles for Skald
@@ -62,7 +63,7 @@ namespace Bifrostheim.Systems.Discord
             {
                 if (ZNet.instance != null && ZNet.instance.IsServer() && (BifrostheimPlugin.DiscordEnabled?.Value ?? false))
                 {
-                    DiscordWebhookDispatcher.OnServerLifecycle("🌲 Valheim Server Online", "The Bifrost bridge has opened! Dedicated server is online and ready for warriors.", DiscordWebhookDispatcher.ColorGreen);
+                    DiscordWebhookDispatcher.OnServerLifecycle("🌲 Server Online", "Valheim dedicated server is online and ready for warriors.", DiscordWebhookDispatcher.ColorGreen);
                 }
             }
             catch (Exception ex)
@@ -331,6 +332,7 @@ namespace Bifrostheim.Systems.Discord
                 catch { }
 
                 string text = !string.IsNullOrWhiteSpace(ev.m_text) ? ev.m_text : ev.m_name;
+                _activeRaidBiome = biome;
                 DiscordWebhookDispatcher.OnRaidEvent(ev.m_name, text, biome, true);
             }
             catch (Exception ex)
@@ -348,8 +350,10 @@ namespace Bifrostheim.Systems.Discord
                 if (_activeRaid != null)
                 {
                     var raid = _activeRaid;
+                    string biome = _activeRaidBiome;
                     _activeRaid = null;
-                    DiscordWebhookDispatcher.OnRaidEvent(raid.m_name, "", "10th World", false);
+                    _activeRaidBiome = "";
+                    DiscordWebhookDispatcher.OnRaidEvent(raid.m_name, "", biome, false);
                 }
             }
             catch (Exception ex)

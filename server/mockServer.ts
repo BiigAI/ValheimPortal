@@ -859,17 +859,16 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
             username: botName,
             avatar_url: botAvatar,
             embeds: [{
-              title: '🟢 Viking Arrived in the 10th World',
-              description: '**Ragnar Lothbrok** has awakened in the 10th realm.',
+              title: '🟢 Viking Joined',
+              description: '**Ragnar** entered the realm.',
               color: 0x2ECC71,
-              fields: [{ name: 'Online Players', value: '3 / 10', inline: true }],
-              footer: { text: 'Bifrostheim • Bigfrost Server Portal' },
+              footer: { text: 'Bifrostheim • 3/10 online' },
               timestamp: ts,
             }],
           } : {
             username: botName,
             avatar_url: botAvatar,
-            content: '🟢 **Ragnar Lothbrok** arrived in the 10th world (3/10 online).',
+            content: '🟢 **Ragnar** entered the realm (3/10 online).',
           };
           break;
 
@@ -879,20 +878,16 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
             username: botName,
             avatar_url: botAvatar,
             embeds: [{
-              title: '🔵 Viking Departed',
-              description: '**Lagertha** departed the 10th realm.',
+              title: '🔵 Viking Left',
+              description: '**Lagertha** left the realm.',
               color: 0x3498DB,
-              fields: [
-                { name: 'Session Duration', value: '1h 42m', inline: true },
-                { name: 'Remaining Online', value: '2 / 10', inline: true },
-              ],
-              footer: { text: 'Bifrostheim • Bigfrost Server Portal' },
+              footer: { text: 'Bifrostheim • Session: 1h 42m • 2/10 online' },
               timestamp: ts,
             }],
           } : {
             username: botName,
             avatar_url: botAvatar,
-            content: '🔵 **Lagertha** departed the 10th realm (Session: 1h 42m, 2/10 online).',
+            content: '🔵 **Lagertha** left the realm (Session: 1h 42m • 2/10 online).',
           };
           break;
 
@@ -905,8 +900,7 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
               title: '💀 Viking Fallen',
               description: '**Bjorn** met their end in the **Swamp**.',
               color: 0xE74C3C,
-              fields: [{ name: 'Biome', value: 'Swamp', inline: true }],
-              footer: { text: 'Bifrostheim • Bigfrost Server Portal' },
+              footer: { text: 'Bifrostheim' },
               timestamp: ts,
             }],
           } : {
@@ -921,14 +915,10 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
             username: botName,
             avatar_url: botAvatar,
             embeds: [{
-              title: '💀 Viking Chronicle • Skald Slaying',
+              title: '💀 Viking Fallen',
               description: '**Bjorn Ironside** was crushed into dust by a legendary **2-Star Troll** in the **Black Forest**!',
               color: 0xE74C3C,
-              fields: [
-                { name: 'Killer', value: '2-Star Troll', inline: true },
-                { name: 'Biome', value: 'Black Forest', inline: true },
-              ],
-              footer: { text: 'Skald Chronicle • Bigfrost Server Portal' },
+              footer: { text: 'Bifrostheim • Skald Chronicle' },
               timestamp: ts,
             }],
           } : {
@@ -944,21 +934,16 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
             username: botName,
             avatar_url: botAvatar,
             embeds: [{
-              title: '⚔️ Viking Duel / PvP Slaying',
-              description: '**Ragnar** vanquished **Ivar** in glorious combat in the **Plains**!',
+              title: '⚔️ Viking Duel',
+              description: '**Ragnar** vanquished **Ivar** in the **Plains**!',
               color: 0xE74C3C,
-              fields: [
-                { name: 'Victor', value: 'Ragnar', inline: true },
-                { name: 'Fallen', value: 'Ivar', inline: true },
-                { name: 'Biome', value: 'Plains', inline: true },
-              ],
-              footer: { text: 'Bifrostheim • Bigfrost Server Portal' },
+              footer: { text: 'Bifrostheim' },
               timestamp: ts,
             }],
           } : {
             username: botName,
             avatar_url: botAvatar,
-            content: '⚔️ **Ragnar** vanquished **Ivar** in glorious combat in the **Plains**!',
+            content: '⚔️ **Ragnar** vanquished **Ivar** in the **Plains**!',
           };
           break;
 
@@ -968,21 +953,16 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
             username: botName,
             avatar_url: botAvatar,
             embeds: [{
-              title: '🌲 Valheim Server Online',
-              description: 'The Bifrost bridge has opened! The dedicated server is now ready for warriors to enter.',
+              title: '🌲 Server Online',
+              description: 'Valheim dedicated server is online and ready for warriors.',
               color: 0x2ECC71,
-              fields: [
-                { name: 'World', value: 'Valhalla', inline: true },
-                { name: 'Port', value: '2456', inline: true },
-                { name: 'Portal Bridge', value: 'Active', inline: true },
-              ],
-              footer: { text: 'Bifrostheim • Bigfrost Server Portal' },
+              footer: { text: 'Bifrostheim' },
               timestamp: ts,
             }],
           } : {
             username: botName,
             avatar_url: botAvatar,
-            content: '🌲 **Server Online**: Valheim Dedicated Server is ready for connections! (Port: 2456, World: Valhalla)',
+            content: '🌲 **Server Online**: Valheim dedicated server is online and ready for warriors.',
           };
           break;
 
@@ -992,11 +972,10 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
             username: botName,
             avatar_url: botAvatar,
             embeds: [{
-              title: '⏳ Scheduled Server Restart Warning',
-              description: 'The server is scheduled to restart in **5 minutes** for maintenance.\nPlease seek shelter and ensure your progress is saved!',
+              title: '⏳ Server Restart Warning',
+              description: 'The server is scheduled to restart in **5 minutes** for maintenance.\nPlease seek shelter and save your progress!',
               color: 0xE67E22,
-              fields: [{ name: 'Countdown', value: '5 minutes', inline: true }],
-              footer: { text: 'Bifrostheim • Bigfrost Server Portal' },
+              footer: { text: 'Bifrostheim' },
               timestamp: ts,
             }],
           } : {
@@ -1011,20 +990,16 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
             username: botName,
             avatar_url: botAvatar,
             embeds: [{
-              title: '⚡ Forsaken Awakened!',
+              title: '⚡ Forsaken Awakened',
               description: '**Moder** has answered the call of sacrifice in the **Mountain**!',
               color: 0xF39C12,
-              fields: [
-                { name: 'Forsaken', value: 'Moder', inline: true },
-                { name: 'Biome', value: 'Mountain', inline: true },
-              ],
-              footer: { text: 'Bifrostheim • Bigfrost Server Portal' },
+              footer: { text: 'Bifrostheim' },
               timestamp: ts,
             }],
           } : {
             username: botName,
             avatar_url: botAvatar,
-            content: '⚡ **Moder** has answered the call of sacrifice in the **Mountain**!',
+            content: '⚡ **Forsaken Awakened**: **Moder** has answered the call of sacrifice in the **Mountain**!',
           };
           break;
 
@@ -1033,20 +1008,16 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
             username: botName,
             avatar_url: botAvatar,
             embeds: [{
-              title: '🏆 Forsaken Slain!',
-              description: 'The ancient dragon **Moder** has been vanquished from the 10th realm! Odin smiles upon the victorious.',
+              title: '🏆 Forsaken Slain',
+              description: 'The ancient dragon **Moder** has been vanquished from the realm!',
               color: 0xF39C12,
-              fields: [
-                { name: 'Forsaken', value: 'Moder', inline: true },
-                { name: 'Status', value: 'Vanquished', inline: true },
-              ],
-              footer: { text: 'Bifrostheim • Bigfrost Server Portal' },
+              footer: { text: 'Bifrostheim' },
               timestamp: ts,
             }],
           } : {
             username: botName,
             avatar_url: botAvatar,
-            content: '🏆 The ancient dragon **Moder** has been vanquished from the 10th realm!',
+            content: '🏆 **Forsaken Slain**: The ancient dragon **Moder** has been vanquished from the realm!',
           };
           break;
 
@@ -1055,20 +1026,16 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
             username: botName,
             avatar_url: botAvatar,
             embeds: [{
-              title: '⚡ Raid Event Started!',
-              description: '**"The ground is shaking"**\nA troll raid has begun in the **Black Forest**! Defend your homesteads!',
+              title: '⚡ Raid: "The ground is shaking"',
+              description: 'A troll raid has begun in the **Black Forest**! Defend your homestead!',
               color: 0xE67E22,
-              fields: [
-                { name: 'Event', value: 'The ground is shaking', inline: true },
-                { name: 'Biome', value: 'Black Forest', inline: true },
-              ],
-              footer: { text: 'Bifrostheim • Bigfrost Server Portal' },
+              footer: { text: 'Bifrostheim' },
               timestamp: ts,
             }],
           } : {
             username: botName,
             avatar_url: botAvatar,
-            content: '⚡ **Raid Event Started**: "The ground is shaking" in the **Black Forest**!',
+            content: '⚡ **Raid: "The ground is shaking"**: A troll raid has begun in the **Black Forest**!',
           };
           break;
 
@@ -1077,20 +1044,16 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
             username: botName,
             avatar_url: botAvatar,
             embeds: [{
-              title: '🌤️ Raid Event Ended',
-              description: 'The tremors subside. The raid in the **Black Forest** has been repelled.',
+              title: '🌤️ Raid Ended',
+              description: 'The raid in the **Black Forest** has subsided.',
               color: 0x3498DB,
-              fields: [
-                { name: 'Event', value: 'The ground is shaking', inline: true },
-                { name: 'Status', value: 'Repelled', inline: true },
-              ],
-              footer: { text: 'Bifrostheim • Bigfrost Server Portal' },
+              footer: { text: 'Bifrostheim' },
               timestamp: ts,
             }],
           } : {
             username: botName,
             avatar_url: botAvatar,
-            content: '🌤️ **Raid Event Ended**: The ground stops shaking in the **Black Forest**.',
+            content: '🌤️ **Raid Ended**: The raid in the **Black Forest** has subsided.',
           };
           break;
 
@@ -1103,21 +1066,16 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
             username: botName,
             avatar_url: botAvatar,
             embeds: [{
-              title: `🔨 Admin Action: Player ${act}`,
-              description: `**Gunnar** was ${act.toLowerCase()}ed from the server by **Admin**.`,
+              title: `🔨 Player ${act}`,
+              description: `**Gunnar** was ${act.toLowerCase()}ed by **Admin**.\n**Reason:** Griefing longhouse perimeter`,
               color: 0x9B59B6,
-              fields: [
-                { name: 'Target', value: 'Gunnar', inline: true },
-                { name: 'Moderator', value: 'Admin', inline: true },
-                { name: 'Reason', value: 'Griefing longhouse perimeter', inline: false },
-              ],
-              footer: { text: 'Bifrostheim • Bigfrost Server Portal' },
+              footer: { text: 'Bifrostheim Moderation' },
               timestamp: ts,
             }],
           } : {
             username: botName,
             avatar_url: botAvatar,
-            content: `🔨 **Admin Action**: Player **Gunnar** was ${act.toLowerCase()}ed by **Admin** (Reason: Griefing longhouse perimeter).`,
+            content: `🔨 **Player ${act}**: **Gunnar** was ${act.toLowerCase()}ed by **Admin** (Reason: Griefing longhouse perimeter)`,
           };
           break;
 
@@ -1130,7 +1088,7 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
               author: { name: 'Torstein' },
               description: '📢 "To the longships! The serpents approach!"',
               color: 0x95A5A6,
-              footer: { text: 'In-Game Shout' },
+              footer: { text: 'Bifrostheim Shout' },
               timestamp: ts,
             }],
           } : {
@@ -1148,7 +1106,7 @@ export function handleMockApiRequest(req: IncomingMessage, res: ServerResponse):
               title: '⚔️ Bifrostheim Webhook Test',
               description: 'Discord webhook bridge is active and operational in the 10th realm.',
               color: 0xF39C12,
-              footer: { text: 'Bifrostheim • Bigfrost Server Portal' },
+              footer: { text: 'Bifrostheim' },
               timestamp: ts,
             }],
           };
