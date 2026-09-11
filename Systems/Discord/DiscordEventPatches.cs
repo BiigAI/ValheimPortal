@@ -27,18 +27,45 @@ namespace Bifrostheim.Systems.Discord
 
         public static void ApplyPatches()
         {
+            if (_harmony != null) return;
+
             try
             {
-                if (_harmony == null)
+                _harmony = new Harmony("com.bigai.bigfrost_serverportal.discord");
+
+                var patchClasses = new[]
                 {
-                    _harmony = new Harmony("com.bigai.bigfrost_serverportal.discord");
-                    _harmony.PatchAll(typeof(DiscordEventPatches));
-                    BifrostheimPlugin.Log?.LogInfo("[Discord] Harmony event patches applied successfully.");
+                    typeof(ServerReadyPatch),
+                    typeof(PlayerJoinPatch),
+                    typeof(PlayerLeavePatch),
+                    typeof(ZoneSystemStartPatch),
+                    typeof(BossDefeatedKeyPatch),
+                    typeof(BossDefeatedKeyEnumPatch),
+                    typeof(RaidStartPatch),
+                    typeof(RaidEndPatch),
+                    typeof(ChatShoutPatch)
+                };
+
+                int successCount = 0;
+                foreach (var patchClass in patchClasses)
+                {
+                    try
+                    {
+                        _harmony.PatchAll(patchClass);
+                        successCount++;
+                        BifrostheimPlugin.Log?.LogInfo($"[Discord] Harmony patch applied: {patchClass.Name}");
+                    }
+                    catch (Exception ex)
+                    {
+                        BifrostheimPlugin.Log?.LogError($"[Discord] Failed to apply {patchClass.Name}: {ex.Message}");
+                    }
                 }
+
+                BifrostheimPlugin.Log?.LogInfo($"[Discord] Harmony event patches initialized ({successCount}/{patchClasses.Length} active).");
             }
             catch (Exception ex)
             {
-                BifrostheimPlugin.Log?.LogError($"[Discord] Failed to apply event patches: {ex}");
+                BifrostheimPlugin.Log?.LogError($"[Discord] Fatal error initializing event patches: {ex}");
             }
         }
 
@@ -59,81 +86,92 @@ namespace Bifrostheim.Systems.Discord
 
         // ── 0. Server Ready Patch ─────────────────────────────────────────────────
         [HarmonyPatch(typeof(ZNet), "Awake")]
-        [HarmonyPostfix]
-        private static void OnZNetAwakePostfix()
+        internal static class ServerReadyPatch
         {
-            try
+            [HarmonyPostfix]
+            private static void Postfix()
             {
-                if (ZNet.instance != null && ZNet.instance.IsServer() && (BifrostheimPlugin.DiscordEnabled?.Value ?? false))
+                try
                 {
-                    DiscordWebhookDispatcher.OnServerLifecycle("🌲 Server Online", "Valheim dedicated server is online and ready for warriors.", DiscordWebhookDispatcher.ColorGreen);
+                    if (ZNet.instance != null && ZNet.instance.IsServer() && (BifrostheimPlugin.DiscordEnabled?.Value ?? false))
+                    {
+                        DiscordWebhookDispatcher.OnServerLifecycle("🌲 Server Online", "Valheim dedicated server is online and ready for warriors.", DiscordWebhookDispatcher.ColorGreen);
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                BifrostheimPlugin.Log?.LogWarning($"[Discord] Error in Server Online patch: {ex.Message}");
+                catch (Exception ex)
+                {
+                    BifrostheimPlugin.Log?.LogWarning($"[Discord] Error in Server Online patch: {ex.Message}");
+                }
             }
         }
 
         // ── 1. Player Join Patch ──────────────────────────────────────────────────
         [HarmonyPatch(typeof(ZNet), "RPC_PeerInfo")]
-        [HarmonyPostfix]
-        private static void OnRpcPeerInfoPostfix(ZRpc rpc)
+        internal static class PlayerJoinPatch
         {
-            try
+            [HarmonyPostfix]
+            private static void Postfix(ZRpc rpc)
             {
-                if (ZNet.instance == null || !ZNet.instance.IsServer()) return;
+                try
+                {
+                    if (ZNet.instance == null || !ZNet.instance.IsServer()) return;
 
-                var peer = ZNetHelper.GetPeerByRpc(rpc);
-                if (peer == null || string.IsNullOrWhiteSpace(peer.m_playerName)) return;
+                    var peer = ZNetHelper.GetPeerByRpc(rpc);
+                    if (peer == null || string.IsNullOrWhiteSpace(peer.m_playerName)) return;
 
-                string playerName = peer.m_playerName.Trim();
-                string playerId = ZNetHelper.GetPlayerId(peer);
-                string trackingKey = !string.IsNullOrWhiteSpace(playerId) ? playerId : playerName;
+                    string playerName = peer.m_playerName.Trim();
+                    string playerId = ZNetHelper.GetPlayerId(peer);
+                    string trackingKey = !string.IsNullOrWhiteSpace(playerId) ? playerId : playerName;
 
-                _sessionStartTimes[trackingKey] = DateTime.UtcNow;
+                    _sessionStartTimes[trackingKey] = DateTime.UtcNow;
 
-                int onlineCount = ZNetHelper.GetPeers().Count;
-                int maxSlots = ZNetHelper.GetServerPlayerLimit();
+                    int onlineCount = ZNetHelper.GetPeers().Count;
+                    int maxSlots = ZNetHelper.GetServerPlayerLimit();
 
-                DiscordWebhookDispatcher.OnPlayerJoin(playerName, onlineCount, maxSlots);
-            }
-            catch (Exception ex)
-            {
-                BifrostheimPlugin.Log?.LogWarning($"[Discord] Error in Join patch: {ex.Message}");
+                    BifrostheimPlugin.Log?.LogInfo($"[Discord] Player joined: '{playerName}' ({onlineCount}/{maxSlots}).");
+                    DiscordWebhookDispatcher.OnPlayerJoin(playerName, onlineCount, maxSlots);
+                }
+                catch (Exception ex)
+                {
+                    BifrostheimPlugin.Log?.LogWarning($"[Discord] Error in Join patch: {ex.Message}");
+                }
             }
         }
 
         // ── 2. Player Leave Patch ─────────────────────────────────────────────────
         [HarmonyPatch(typeof(ZNet), "Disconnect")]
-        [HarmonyPrefix]
-        private static void OnDisconnectPrefix(ZNetPeer peer)
+        internal static class PlayerLeavePatch
         {
-            try
+            [HarmonyPrefix]
+            private static void Prefix(ZNetPeer peer)
             {
-                if (ZNet.instance == null || !ZNet.instance.IsServer() || peer == null) return;
-                if (string.IsNullOrWhiteSpace(peer.m_playerName)) return;
-
-                string playerName = peer.m_playerName.Trim();
-                string playerId = ZNetHelper.GetPlayerId(peer);
-                string trackingKey = !string.IsNullOrWhiteSpace(playerId) ? playerId : playerName;
-
-                TimeSpan duration = TimeSpan.Zero;
-                if (_sessionStartTimes.TryRemove(trackingKey, out var start))
+                try
                 {
-                    duration = DateTime.UtcNow - start;
+                    if (ZNet.instance == null || !ZNet.instance.IsServer() || peer == null) return;
+                    if (string.IsNullOrWhiteSpace(peer.m_playerName)) return;
+
+                    string playerName = peer.m_playerName.Trim();
+                    string playerId = ZNetHelper.GetPlayerId(peer);
+                    string trackingKey = !string.IsNullOrWhiteSpace(playerId) ? playerId : playerName;
+
+                    TimeSpan duration = TimeSpan.Zero;
+                    if (_sessionStartTimes.TryRemove(trackingKey, out var start))
+                    {
+                        duration = DateTime.UtcNow - start;
+                    }
+
+                    _playerLastHealth.TryRemove(trackingKey, out _);
+
+                    int remaining = Math.Max(0, ZNetHelper.GetPeers().Count - 1);
+                    int maxSlots = ZNetHelper.GetServerPlayerLimit();
+
+                    BifrostheimPlugin.Log?.LogInfo($"[Discord] Player left: '{playerName}' (session: {duration.TotalMinutes:F1}m).");
+                    DiscordWebhookDispatcher.OnPlayerLeave(playerName, duration, remaining, maxSlots);
                 }
-
-                _playerLastHealth.TryRemove(trackingKey, out _);
-
-                int remaining = Math.Max(0, ZNetHelper.GetPeers().Count - 1);
-                int maxSlots = ZNetHelper.GetServerPlayerLimit();
-
-                DiscordWebhookDispatcher.OnPlayerLeave(playerName, duration, remaining, maxSlots);
-            }
-            catch (Exception ex)
-            {
-                BifrostheimPlugin.Log?.LogWarning($"[Discord] Error in Leave patch: {ex.Message}");
+                catch (Exception ex)
+                {
+                    BifrostheimPlugin.Log?.LogWarning($"[Discord] Error in Leave patch: {ex.Message}");
+                }
             }
         }
 
@@ -263,6 +301,7 @@ namespace Bifrostheim.Systems.Discord
                     BifrostheimPlugin.Log?.LogDebug($"[DiscordEventPatches] Error querying Skald kill feed: {ex.Message}");
                 }
 
+                BifrostheimPlugin.Log?.LogInfo($"[Discord] Detected player death: '{victimName}' in biome '{biome}'.");
                 DiscordWebhookDispatcher.OnPlayerDeath(victimName, biome, killerName, formattedLore);
             }
             catch (Exception ex)
@@ -273,36 +312,58 @@ namespace Bifrostheim.Systems.Discord
 
         // ── 4. Boss Defeated Patch (ZoneSystem.SetGlobalKey) ──────────────────────
         [HarmonyPatch(typeof(ZoneSystem), "Start")]
-        [HarmonyPostfix]
-        private static void OnZoneSystemStartPostfix()
+        internal static class ZoneSystemStartPatch
         {
-            try
+            [HarmonyPostfix]
+            private static void Postfix()
             {
-                if (ZoneSystem.instance != null && ZoneSystem.instance.m_globalKeys != null)
+                try
                 {
-                    foreach (string key in ZoneSystem.instance.m_globalKeys)
+                    var globalKeys = ZoneSystem.instance?.GetGlobalKeys();
+                    if (globalKeys != null)
                     {
-                        if (!string.IsNullOrWhiteSpace(key))
+                        foreach (string key in globalKeys)
                         {
-                            _knownGlobalKeys.TryAdd(key.Trim().ToLowerInvariant(), 0);
+                            if (!string.IsNullOrWhiteSpace(key))
+                            {
+                                _knownGlobalKeys.TryAdd(key.Trim().ToLowerInvariant(), 0);
+                            }
                         }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                BifrostheimPlugin.Log?.LogDebug($"[DiscordEventPatches] Error caching initial global keys: {ex.Message}");
+                catch (Exception ex)
+                {
+                    BifrostheimPlugin.Log?.LogDebug($"[DiscordEventPatches] Error caching initial global keys: {ex.Message}");
+                }
             }
         }
 
         [HarmonyPatch(typeof(ZoneSystem), "SetGlobalKey", new[] { typeof(string) })]
-        [HarmonyPostfix]
-        private static void OnSetGlobalKeyPostfix(string name)
+        internal static class BossDefeatedKeyPatch
+        {
+            [HarmonyPostfix]
+            private static void Postfix(string name)
+            {
+                ProcessGlobalKey(name);
+            }
+        }
+
+        [HarmonyPatch(typeof(ZoneSystem), "SetGlobalKey", new[] { typeof(GlobalKeys) })]
+        internal static class BossDefeatedKeyEnumPatch
+        {
+            [HarmonyPostfix]
+            private static void Postfix(GlobalKeys key)
+            {
+                ProcessGlobalKey(key.ToString());
+            }
+        }
+
+        internal static void ProcessGlobalKey(string? rawKey)
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(name)) return;
-                string key = name.Trim().ToLowerInvariant();
+                if (string.IsNullOrWhiteSpace(rawKey)) return;
+                string key = rawKey!.Trim().ToLowerInvariant();
 
                 if (_knownGlobalKeys.ContainsKey(key)) return;
                 _knownGlobalKeys.TryAdd(key, 0);
@@ -320,6 +381,7 @@ namespace Bifrostheim.Systems.Discord
 
                 if (bossName != null)
                 {
+                    BifrostheimPlugin.Log?.LogInfo($"[Discord] Detected boss milestone: '{bossName}' ({key}).");
                     DiscordWebhookDispatcher.OnBossEvent(bossName, biome, true);
                 }
             }
@@ -331,86 +393,98 @@ namespace Bifrostheim.Systems.Discord
 
         // ── 5. World Raids / Random Events Patches ────────────────────────────────
         [HarmonyPatch(typeof(RandEventSystem), "SetRandomEvent")]
-        [HarmonyPostfix]
-        private static void OnSetRandomEventPostfix(RandomEvent ev, Vector3 pos)
+        internal static class RaidStartPatch
         {
-            try
+            [HarmonyPostfix]
+            private static void Postfix(RandomEvent ev, Vector3 pos)
             {
-                if (ev == null) return;
-                _activeRaid = ev;
-
-                string biome = "Meadows";
                 try
                 {
-                    if (WorldGenerator.instance != null)
+                    if (ev == null) return;
+                    _activeRaid = ev;
+
+                    string biome = "Meadows";
+                    try
                     {
-                        biome = WorldGenerator.instance.GetBiome(pos.x, pos.z).ToString();
+                        if (WorldGenerator.instance != null)
+                        {
+                            biome = WorldGenerator.instance.GetBiome(pos.x, pos.z).ToString();
+                        }
                     }
+                    catch (Exception ex)
+                    {
+                        BifrostheimPlugin.Log?.LogDebug($"[DiscordEventPatches] Failed to query raid biome from WorldGenerator: {ex.Message}");
+                    }
+
+                    string text = !string.IsNullOrWhiteSpace(ev.m_startMessage) ? ev.m_startMessage : ev.m_name;
+                    _activeRaidBiome = biome;
+                    BifrostheimPlugin.Log?.LogInfo($"[Discord] Detected raid start: '{ev.m_name}' in {biome}.");
+                    DiscordWebhookDispatcher.OnRaidEvent(ev.m_name, text, biome, true);
                 }
                 catch (Exception ex)
                 {
-                    BifrostheimPlugin.Log?.LogDebug($"[DiscordEventPatches] Failed to query raid biome from WorldGenerator: {ex.Message}");
+                    BifrostheimPlugin.Log?.LogWarning($"[Discord] Error in Raid Start patch: {ex.Message}");
                 }
-
-                string text = !string.IsNullOrWhiteSpace(ev.m_text) ? ev.m_text : ev.m_name;
-                _activeRaidBiome = biome;
-                DiscordWebhookDispatcher.OnRaidEvent(ev.m_name, text, biome, true);
-            }
-            catch (Exception ex)
-            {
-                BifrostheimPlugin.Log?.LogWarning($"[Discord] Error in Raid Start patch: {ex.Message}");
             }
         }
 
         [HarmonyPatch(typeof(RandEventSystem), "ResetRandomEvent")]
-        [HarmonyPostfix]
-        private static void OnResetRandomEventPostfix()
+        internal static class RaidEndPatch
         {
-            try
+            [HarmonyPostfix]
+            private static void Postfix()
             {
-                if (_activeRaid != null)
+                try
                 {
-                    var raid = _activeRaid;
-                    string biome = _activeRaidBiome;
-                    _activeRaid = null;
-                    _activeRaidBiome = "";
-                    DiscordWebhookDispatcher.OnRaidEvent(raid.m_name, "", biome, false);
+                    if (_activeRaid != null)
+                    {
+                        var raid = _activeRaid;
+                        string biome = _activeRaidBiome;
+                        _activeRaid = null;
+                        _activeRaidBiome = "";
+                        BifrostheimPlugin.Log?.LogInfo($"[Discord] Detected raid end: '{raid.m_name}'.");
+                        DiscordWebhookDispatcher.OnRaidEvent(raid.m_name, "", biome, false);
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                BifrostheimPlugin.Log?.LogWarning($"[Discord] Error in Raid End patch: {ex.Message}");
+                catch (Exception ex)
+                {
+                    BifrostheimPlugin.Log?.LogWarning($"[Discord] Error in Raid End patch: {ex.Message}");
+                }
             }
         }
 
         // ── 6. Chat Shout Relay Patch ─────────────────────────────────────────────
         [HarmonyPatch(typeof(Chat), "RPC_ChatMessage")]
-        [HarmonyPostfix]
-        private static void OnRpcChatMessagePostfix(long sender, Vector3 position, int type, UserInfo user, string text)
+        internal static class ChatShoutPatch
         {
-            try
+            [HarmonyPostfix]
+            private static void Postfix(long sender, Vector3 position, int type, UserInfo userInfo, string text)
             {
-                if (type != (int)Talker.Type.Shout) return;
-                if (string.IsNullOrWhiteSpace(text)) return;
-
-                string senderName = user.Name ?? "";
-                if (string.IsNullOrWhiteSpace(senderName) && ZNet.instance != null)
+                try
                 {
-                    var peer = ZNet.instance.GetPeer(sender);
-                    if (peer != null && !string.IsNullOrWhiteSpace(peer.m_playerName))
+                    if (type != (int)Talker.Type.Shout) return;
+                    if (string.IsNullOrWhiteSpace(text)) return;
+
+                    string senderName = userInfo.Name ?? "";
+                    if (string.IsNullOrWhiteSpace(senderName) && ZNet.instance != null)
                     {
-                        senderName = peer.m_playerName.Trim();
+                        var peer = ZNet.instance.GetPeer(sender);
+                        if (peer != null && !string.IsNullOrWhiteSpace(peer.m_playerName))
+                        {
+                            senderName = peer.m_playerName.Trim();
+                        }
                     }
+
+                    if (string.IsNullOrWhiteSpace(senderName) || string.Equals(senderName, "Server", StringComparison.OrdinalIgnoreCase))
+                        return;
+
+                    BifrostheimPlugin.Log?.LogInfo($"[Discord] Relaying chat shout from '{senderName}'.");
+                    DiscordWebhookDispatcher.OnChatShout(senderName, text.Trim());
                 }
-
-                if (string.IsNullOrWhiteSpace(senderName) || string.Equals(senderName, "Server", StringComparison.OrdinalIgnoreCase))
-                    return;
-
-                DiscordWebhookDispatcher.OnChatShout(senderName, text.Trim());
-            }
-            catch (Exception ex)
-            {
-                BifrostheimPlugin.Log?.LogDebug($"[DiscordEventPatches] Error in Chat shout patch: {ex.Message}");
+                catch (Exception ex)
+                {
+                    BifrostheimPlugin.Log?.LogDebug($"[DiscordEventPatches] Error in Chat shout patch: {ex.Message}");
+                }
             }
         }
     }

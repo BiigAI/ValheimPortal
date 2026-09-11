@@ -124,12 +124,12 @@ namespace Bifrostheim.Systems.Discord
 
             if (target == DiscordChannelTarget.Chat && !string.IsNullOrWhiteSpace(BifrostheimPlugin.DiscordOverrideChatWebhookUrl?.Value))
             {
-                return BifrostheimPlugin.DiscordOverrideChatWebhookUrl.Value.Trim();
+                return BifrostheimPlugin.DiscordOverrideChatWebhookUrl!.Value.Trim();
             }
 
             if (target == DiscordChannelTarget.Admin && !string.IsNullOrWhiteSpace(BifrostheimPlugin.DiscordOverrideAdminWebhookUrl?.Value))
             {
-                return BifrostheimPlugin.DiscordOverrideAdminWebhookUrl.Value.Trim();
+                return BifrostheimPlugin.DiscordOverrideAdminWebhookUrl!.Value.Trim();
             }
 
             return BifrostheimPlugin.DiscordWebhookUrl?.Value?.Trim() ?? string.Empty;
@@ -139,6 +139,7 @@ namespace Bifrostheim.Systems.Discord
         {
             if (!(BifrostheimPlugin.DiscordEnabled?.Value ?? false) && string.IsNullOrWhiteSpace(explicitUrl))
             {
+                BifrostheimPlugin.Log?.LogDebug($"[Discord] Webhook notification skipped: Discord integration is disabled (DiscordWebhook.Enabled = false).");
                 return;
             }
 
@@ -149,6 +150,7 @@ namespace Bifrostheim.Systems.Discord
                 PayloadJson = payloadJson,
                 RetryCount = 0
             });
+            BifrostheimPlugin.Log?.LogInfo($"[Discord] Enqueued notification for target '{target}'. Queue length: {_queue.Count}");
         }
 
         private static async Task WorkerLoop(CancellationToken ct)
@@ -162,9 +164,13 @@ namespace Bifrostheim.Systems.Discord
                         string targetUrl = ResolveWebhookUrl(item.Target, item.ExplicitUrl);
                         if (string.IsNullOrWhiteSpace(targetUrl) || !IsValidDiscordWebhookUrl(targetUrl))
                         {
-                            if (!string.IsNullOrWhiteSpace(targetUrl))
+                            if (string.IsNullOrWhiteSpace(targetUrl))
                             {
-                                BifrostheimPlugin.Log?.LogWarning($"[Discord] Discarding payload for target '{item.Target}': Webhook URL is invalid or unsafe.");
+                                BifrostheimPlugin.Log?.LogWarning($"[Discord] Discarding notification for target '{item.Target}': No Discord Webhook URL is configured.");
+                            }
+                            else
+                            {
+                                BifrostheimPlugin.Log?.LogWarning($"[Discord] Discarding payload for target '{item.Target}': Webhook URL '{targetUrl}' is invalid or unsafe.");
                             }
                             continue;
                         }
@@ -181,6 +187,7 @@ namespace Bifrostheim.Systems.Discord
                             if (response.IsSuccessStatusCode)
                             {
                                 success = true;
+                                BifrostheimPlugin.Log?.LogInfo($"[Discord] Webhook notification delivered successfully for target '{item.Target}'.");
                             }
                             else if ((int)response.StatusCode == 429)
                             {

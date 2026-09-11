@@ -102,3 +102,4 @@ scratch/
 .temp/
 *.local.json
 TODO.md
+docker-compose.yml

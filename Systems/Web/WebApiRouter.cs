@@ -10,6 +10,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using BepInEx.Bootstrap;
 using Bifrostheim.Helpers;
@@ -1312,14 +1313,14 @@ namespace Bifrostheim.Systems.Web
         private static string MaskWebhookUrl(string? url)
         {
             if (string.IsNullOrWhiteSpace(url)) return string.Empty;
-            url = url.Trim();
-            if (url.Length <= 12) return new string('*', url.Length);
+            string trimmed = url!.Trim();
+            if (trimmed.Length <= 12) return new string('*', trimmed.Length);
 
-            int lastSlash = url.LastIndexOf('/');
-            if (lastSlash > 0 && lastSlash < url.Length - 4)
+            int lastSlash = trimmed.LastIndexOf('/');
+            if (lastSlash > 0 && lastSlash < trimmed.Length - 4)
             {
-                string prefix = url.Substring(0, lastSlash + 1);
-                string token = url.Substring(lastSlash + 1);
+                string prefix = trimmed.Substring(0, lastSlash + 1);
+                string token = trimmed.Substring(lastSlash + 1);
                 if (token.Length > 8)
                 {
                     return prefix + new string('*', 8) + token.Substring(token.Length - 4);
@@ -1327,12 +1328,12 @@ namespace Bifrostheim.Systems.Web
                 return prefix + new string('*', token.Length);
             }
 
-            return url.Substring(0, 8) + "********" + url.Substring(url.Length - 4);
+            return trimmed.Substring(0, 8) + "********" + trimmed.Substring(trimmed.Length - 4);
         }
 
         private static bool IsMaskedUrl(string? url)
         {
-            return !string.IsNullOrEmpty(url) && url.Contains("****");
+            return url != null && url.Contains("****");
         }
 
         private static async Task HandleGetDiscordConfig(HttpListenerResponse response)

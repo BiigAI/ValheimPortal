@@ -223,7 +223,11 @@ export default function SettingsModal({ isOpen, onClose, onSaved }: SettingsModa
       setIsSaving(true);
       const res = await api.saveDiscordConfig(discordConfig);
       setDiscordConfig(res.config);
-      showToast('Discord webhook configuration saved!', 'success');
+      if (!res.config.enabled) {
+        showToast('Settings saved! Note: Discord Notifications switch is currently Disabled.', 'info');
+      } else {
+        showToast('Discord webhook configuration saved and Active!', 'success');
+      }
       onSaved?.();
     } catch {
       showToast('Failed to save Discord webhook settings', 'error');
@@ -606,6 +610,15 @@ export default function SettingsModal({ isOpen, onClose, onSaved }: SettingsModa
                       </div>
                     </div>
                   </div>
+
+                  {!discordConfig.enabled && (
+                    <div className="flex items-start space-x-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs">
+                      <FiAlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-400" />
+                      <div>
+                        <span className="font-semibold text-amber-200">Discord Integration is currently Disabled:</span> Real in-game server events will <strong>not</strong> be posted to Discord until you toggle <em>"Enable Discord Notifications"</em> ON above and click <em>"Save Discord Settings"</em> below. (Test buttons below will still send immediate test payloads so you can verify URL connectivity).
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                     {TEST_EVENTS.map((event) => {
